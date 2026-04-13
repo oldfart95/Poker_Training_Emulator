@@ -1,5 +1,5 @@
 import { decideBotAction, DecisionDebug } from '../ai/decision';
-import { botProfiles } from '../ai/botProfiles';
+import { botArchetypes } from '../ai/botProfiles';
 import { compareHands, evaluateBestHand } from './handEvaluator';
 import { createDeck, shuffleDeck } from './deck';
 import { ActionRecord, Card, HandSummary, Player, SessionStats, Street } from './types';
@@ -41,7 +41,7 @@ const POS = ['BTN', 'SB', 'BB', 'UTG', 'HJ', 'CO'];
 export const createInitialState = (): GameState => {
   const players: Player[] = Array.from({ length: 6 }, (_, seat) => ({
     id: `p${seat}`,
-    name: seat === 0 ? 'Hero' : botProfiles[seat - 1],
+    name: seat === 0 ? 'Hero' : botArchetypes[seat - 1],
     isHero: seat === 0,
     stack: 10000,
     holeCards: [],
@@ -51,7 +51,7 @@ export const createInitialState = (): GameState => {
     totalContributed: 0,
     seat,
     position: '',
-    profile: seat === 0 ? undefined : botProfiles[seat - 1]
+    profile: seat === 0 ? undefined : botArchetypes[seat - 1]
   }));
 
   return {
