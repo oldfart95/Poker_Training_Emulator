@@ -69,3 +69,8 @@ npm run test
 ## Troubleshooting
 - If `npm install` fails with a registry 403 in restricted environments, run the project in a network-enabled environment with npm registry access.
 - If `npm run test` reports `vitest: not found`, install dependencies first with `npm install`.
+
+
+## Security maintenance
+- Dev-tooling dependencies were bumped to newer Vite/Vitest lines to address the known `esbuild`/Vite advisory path reported by `npm audit` in older versions.
+- After installing dependencies, run `npm audit` and then `npm audit fix` to apply non-breaking advisory updates in your environment.

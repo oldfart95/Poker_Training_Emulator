@@ -24,6 +24,7 @@ export interface GameState {
   lastAggressor: number;
   waitingForHero: boolean;
   summary?: HandSummary;
+  heroStackAtHandStart: number;
   stats: SessionStats;
   botDebug?: DecisionDebug;
 }
@@ -69,6 +70,7 @@ export const createInitialState = (): GameState => {
     actions: [],
     lastAggressor: -1,
     waitingForHero: false,
+    heroStackAtHandStart: 10000,
     stats: initialStats(),
     botDebug: undefined
   };
@@ -88,6 +90,7 @@ const alive = (state: GameState) => state.players.filter((p) => !p.folded);
 export const beginHand = (state: GameState): GameState => {
   const s: GameState = structuredClone(state);
   s.handId += 1;
+  s.heroStackAtHandStart = s.players[0].stack;
   s.dealer = (s.dealer + 1) % s.players.length;
   s.street = 'preflop'; s.board = []; s.previousBoard = []; s.actions = []; s.pot = 0; s.currentBet = s.bb;
   s.deck = shuffleDeck(createDeck());
@@ -140,6 +143,19 @@ const moveStreet = (s: GameState) => {
 
 const allMatched = (s: GameState): boolean => s.players.every((p) => p.folded || p.allIn || p.betThisStreet === s.currentBet);
 
+const finalizeHand = (s: GameState, reachedShowdown: boolean): GameState => {
+  const hero = s.players[0];
+  const delta = hero.stack - s.heroStackAtHandStart;
+  const recap = rateHand(hero, s.board, s.actions, delta, s.bb, s.players);
+  s.summary = { id: s.handId, heroCards: hero.holeCards, heroPosition: hero.position, board: [...s.board], actions: [...s.actions], resultChips: delta, resultBb: delta/s.bb, ...recap };
+  s.stats.winLossBb += delta / s.bb;
+  s.stats.biggestWinBb = Math.max(s.stats.biggestWinBb, delta/s.bb);
+  s.stats.biggestPuntBb = Math.min(s.stats.biggestPuntBb, delta/s.bb);
+  if (reachedShowdown && !hero.folded) s.stats.wtsdCount += 1;
+  s.pot = 0;
+  return s;
+};
+
 const showdown = (s: GameState): GameState => {
   const survivors = s.players.filter((p) => !p.folded);
   let best = evaluateBestHand([...survivors[0].holeCards, ...s.board]);
@@ -153,15 +169,13 @@ const showdown = (s: GameState): GameState => {
   const share = Math.floor(s.pot / winners.length);
   winners.forEach((w) => w.stack += share);
 
-  const hero = s.players[0];
-  const delta = hero.stack - 10000;
-  const recap = rateHand(hero, s.board, s.actions, delta, s.bb, s.players);
-  s.summary = { id: s.handId, heroCards: hero.holeCards, heroPosition: hero.position, board: [...s.board], actions: [...s.actions], resultChips: delta, resultBb: delta/s.bb, ...recap };
-  s.stats.winLossBb += delta / s.bb;
-  s.stats.biggestWinBb = Math.max(s.stats.biggestWinBb, delta/s.bb);
-  s.stats.biggestPuntBb = Math.min(s.stats.biggestPuntBb, delta/s.bb);
-  if (!hero.folded) s.stats.wtsdCount += 1;
-  return s;
+  return finalizeHand(s, true);
+};
+
+const awardFoldOut = (s: GameState): GameState => {
+  const winner = alive(s)[0];
+  winner.stack += s.pot;
+  return finalizeHand(s, false);
 };
 
 export const legalActions = (s: GameState, seat: number) => {
@@ -201,8 +215,7 @@ export const applyAction = (state: GameState, seat: number, type: 'fold'|'check'
   if (seat === 0 && s.street === 'preflop' && ['raise','all-in'].includes(type)) s.stats.pfrCount += 1;
 
   if (alive(s).length === 1) {
-    alive(s)[0].stack += s.pot;
-    return showdown(s);
+    return awardFoldOut(s);
   }
 
   const next = nextActiveSeat(s, seat);
