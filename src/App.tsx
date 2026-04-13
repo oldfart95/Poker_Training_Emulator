@@ -27,8 +27,12 @@ export default function App() {
   const heroAction = (type: 'fold'|'check'|'call'|'raise'|'all-in', amount = 0) => {
     let s = applyAction(state, 0, type, amount);
     s = s.summary ? s : runBotsUntilHero(s);
-    if (s.summary) s = runBotsUntilHero(beginHand(s));
     setState(s);
+    setReplayStep(0);
+  };
+
+  const dealNextHand = () => {
+    setState((prev) => runBotsUntilHero(beginHand(prev)));
     setReplayStep(0);
   };
 
@@ -68,12 +72,13 @@ export default function App() {
             </div>
 
             <div className="actions">
-              <button onClick={() => heroAction('fold')}>Fold</button>
-              <button onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}>{legal.canCheck ? 'Check' : `Call ${legal.toCall}`}</button>
-              <button onClick={() => heroAction('raise', betAmount)}>Bet / Raise</button>
-              <button onClick={() => heroAction('all-in')}>All-in</button>
+              <button disabled={!!state.summary} onClick={() => heroAction('fold')}>Fold</button>
+              <button disabled={!!state.summary} onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}>{legal.canCheck ? 'Check' : `Call ${legal.toCall}`}</button>
+              <button disabled={!!state.summary} onClick={() => heroAction('raise', betAmount)}>Bet / Raise</button>
+              <button disabled={!!state.summary} onClick={() => heroAction('all-in')}>All-in</button>
               <input type="range" min={legal.minRaise} max={Math.max(legal.minRaise, legal.max)} value={Math.min(betAmount, Math.max(legal.minRaise, legal.max))} onChange={(e) => setBetAmount(Number(e.target.value))} />
               <div className="presets">{[0.25,0.33,0.5,0.75,1].map((s) => <button key={s} onClick={() => setBetAmount(Math.round(state.pot * s))}>{Math.round(s*100)}%</button>)}<button onClick={() => setBetAmount(Math.round(2.5*state.bb))}>2.5x</button><button onClick={() => setBetAmount(Math.round(3*state.bb))}>3x</button></div>
+              {state.summary && <button onClick={dealNextHand}>Deal Next Hand</button>}
             </div>
           </section>
 
