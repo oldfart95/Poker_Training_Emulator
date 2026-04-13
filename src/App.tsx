@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { decideBotAction } from './ai/decision';
+import { Archetype } from './ai/tuning/archetypes';
+import { Position } from './ai/tuning/ranges';
 import { applyAction, beginHand, createInitialState, legalActions, runBotsUntilHero } from './engine/gameEngine';
 import { formatCard } from './engine/deck';
+import { GameState } from './engine/gameEngine';
 import { Mode } from './engine/types';
+import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/pacing';
 import { nextDrillSpot } from './training/drills';
+import { formatReplaySteps } from './training/replay';
+import { BlindDefenseContext, CBetContext, evaluateBlindDefense, evaluateCBet, evaluatePreflop, PreflopContext, TrainingAction, TrainingFeedback } from './training/scoring';
 
 const modeLabel: Record<Mode, string> = {
   'full-ring': 'Full Ring Loop',
@@ -34,39 +41,175 @@ const PokerCard = ({ value, hidden = false }: { value?: string; hidden?: boolean
   );
 };
 
+const verdictTone = (verdict?: TrainingFeedback['verdict']) => {
+  if (!verdict) return 'neutral';
+  if (verdict === 'Best') return 'best';
+  if (verdict === 'Good') return 'good';
+  if (verdict === 'Okay') return 'okay';
+  if (verdict === 'Mistake') return 'mistake';
+  return 'punt';
+};
+
 export default function App() {
+  const storedPace = localStorage.getItem('ppp:pace');
+  const initialPace: PaceMode = storedPace === 'Fast' || storedPace === 'Study' ? storedPace : 'Normal';
   const [mode, setMode] = useState<Mode>('full-ring');
   const [state, setState] = useState(() => runBotsUntilHero(beginHand(createInitialState())));
+  const [processing, setProcessing] = useState(false);
   const [replayStep, setReplayStep] = useState(0);
   const [betAmount, setBetAmount] = useState(250);
   const [showWhy, setShowWhy] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [seedMode, setSeedMode] = useState(false);
+  const [drillSeed, setDrillSeed] = useState(20260413);
+  const [drillIndex, setDrillIndex] = useState(0);
   const [drill, setDrill] = useState(() => nextDrillSpot('preflop-trainer'));
+  const [feedback, setFeedback] = useState<TrainingFeedback | null>(null);
+  const [trainingScore, setTrainingScore] = useState(0);
+  const [paceMode, setPaceMode] = useState<PaceMode>(initialPace);
+  const [activeSeat, setActiveSeat] = useState<number | null>(null);
+  const [thinkingSeat, setThinkingSeat] = useState<number | null>(null);
+  const [seatBadges, setSeatBadges] = useState<Record<number, string>>({});
+  const [potPulse, setPotPulse] = useState(false);
+  const [streetAnimTick, setStreetAnimTick] = useState(0);
+
+  const pace = paceProfiles[paceMode];
+
+  const replayActions = useMemo(() => formatReplaySteps(state.summary, state.players), [state.summary, state.players]);
+  const buildNextDrill = (targetMode: Mode, indexOffset = 0) =>
+    nextDrillSpot(targetMode, seedMode ? { seed: drillSeed, index: drillIndex + indexOffset } : undefined);
+
+  useEffect(() => {
+    localStorage.setItem('ppp:pace', paceMode);
+  }, [paceMode]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (mode === 'replay') {
+        if (event.key === 'ArrowLeft') setReplayStep((s) => Math.max(0, s - 1));
+        if (event.key === 'ArrowRight') setReplayStep((s) => Math.min(replayActions.length - 1, s + 1));
+      }
+      if (mode !== 'full-ring' && mode !== 'replay' && event.key.toLowerCase() === 'n') {
+        const next = buildNextDrill(mode, 1);
+        setDrill(next);
+        if (seedMode) setDrillIndex((v) => v + 1);
+        setFeedback(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode, replayActions.length, seedMode, drillSeed, drillIndex]);
+
+  const runPresentationQueue = async (start: GameState) => {
+    let current = structuredClone(start);
+    setProcessing(true);
+
+    while (!current.waitingForHero && !current.summary) {
+      const seat = current.currentSeat;
+      const player = current.players[seat];
+      const legal = legalActions(current, seat);
+      const previousStreet = current.street;
+
+      setActiveSeat(seat);
+      setThinkingSeat(seat);
+      await wait(jitterInRange(pace.thinkMs));
+
+      const decision = decideBotAction({
+        archetype: player.profile as Archetype,
+        cards: player.holeCards,
+        board: current.board,
+        previousBoard: current.previousBoard,
+        street: current.street,
+        toCall: legal.toCall,
+        pot: current.pot,
+        minRaise: legal.minRaise,
+        stack: player.stack,
+        canCheck: legal.canCheck,
+        position: player.position as Position,
+        playersInHand: current.players.filter((p) => !p.folded).length,
+        wasPreflopAggressor: current.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
+        facingThreeBet: current.street === 'preflop' && current.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
+        hasBetThisStreet: current.actions.some((a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'))
+      });
+
+      setThinkingSeat(null);
+      current = applyAction(current, seat, decision.type, decision.amount);
+      setState(current);
+      setSeatBadges((prev) => ({ ...prev, [seat]: decision.type.toUpperCase() }));
+      if (decision.amount > 0) {
+        setPotPulse(true);
+        window.setTimeout(() => setPotPulse(false), jitterInRange(pace.chipMs));
+      }
+
+      if (current.street !== previousStreet) {
+        setStreetAnimTick((v) => v + 1);
+        await wait(jitterInRange(pace.streetMs));
+      } else {
+        await wait(jitterInRange(pace.postActionMs));
+      }
+    }
+
+    if (current.summary) {
+      await wait(jitterInRange(pace.showdownMs));
+    }
+
+    setActiveSeat(current.summary ? null : current.currentSeat);
+    setThinkingSeat(null);
+    setProcessing(false);
+  };
 
   const legal = legalActions(state, 0);
   const canRaise = legal.max >= legal.minRaise && !state.summary;
   const lastAction = state.actions[state.actions.length - 1];
 
-  const heroAction = (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
+  const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
+    if (processing) return;
     let s = applyAction(state, 0, type, amount);
-    s = s.summary ? s : runBotsUntilHero(s);
     setState(s);
+    setSeatBadges((prev) => ({ ...prev, 0: type.toUpperCase() }));
     setReplayStep(0);
+    if (!s.summary) {
+      await runPresentationQueue(s);
+    }
   };
 
-  const dealNextHand = () => {
-    setState((prev) => runBotsUntilHero(beginHand(prev)));
+  const dealNextHand = async () => {
+    if (processing) return;
+    const next = beginHand(state);
+    setState(next);
+    setSeatBadges({});
     setReplayStep(0);
+    await wait(jitterInRange(pace.dealMs));
+    await wait(jitterInRange(pace.dealMs));
+    if (!next.waitingForHero) {
+      await runPresentationQueue(next);
+    }
   };
 
   const handleMode = (m: Mode) => {
     setMode(m);
     if (m === 'full-ring') return;
     if (m === 'replay') return;
-    setDrill(nextDrillSpot(m));
+    setDrillIndex(0);
+    setDrill(buildNextDrill(m, 0));
+    setFeedback(null);
   };
 
-  const replayActions = useMemo(() => state.summary?.actions ?? [], [state.summary]);
+  const scoreDrill = (action: TrainingAction) => {
+    if (!drill) return;
+    let result: TrainingFeedback;
+
+    if (drill.category === 'preflop-trainer') {
+      result = evaluatePreflop(drill.heroCards, action, drill.context as PreflopContext);
+    } else if (drill.category === 'cbet-trainer') {
+      result = evaluateCBet(drill.heroCards, drill.board ?? [], action, drill.context as CBetContext);
+    } else {
+      result = evaluateBlindDefense(drill.heroCards, action, drill.context as BlindDefenseContext);
+    }
+
+    setFeedback(result);
+    setTrainingScore((prev) => prev + result.scoreDelta);
+  };
 
   return (
     <div className="app">
@@ -89,7 +232,7 @@ export default function App() {
           <section className="table-shell">
             <div className={`table-surface street-${state.street}`}>
               <div className="table-vignette" />
-              <div className="pot-plaque">
+              <div className={`pot-plaque ${potPulse ? 'pot-pulse' : ''}`}>
                 <span className="label">Main Pot</span>
                 <div key={`${state.handId}-${state.pot}`} className="pot-pop">
                   <ChipStack amount={state.pot} />
@@ -99,7 +242,7 @@ export default function App() {
               <div className={`street-banner ${state.street}`}>
                 <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
               </div>
-              <div className="board-lane" key={`${state.handId}-${state.board.length}`}>
+              <div className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`} key={`${state.handId}-${state.board.length}-${streetAnimTick}`}>
                 {state.board.length === 0 && <span className="street-hint">Waiting for flop...</span>}
                 {state.board.map((c, i) => (
                   <PokerCard key={`${c.rank}${c.suit}${i}`} value={formatCard(c)} />
@@ -109,7 +252,7 @@ export default function App() {
               <div className="seats-ring">
                 {state.players.map((p, index) => (
                   <article
-                    className={`seat-panel ${seatClass[index]} ${p.isHero ? 'hero' : ''} ${p.folded ? 'folded' : ''} ${state.currentSeat === index && !state.summary ? 'active-turn' : ''}`}
+                    className={`seat-panel ${seatClass[index]} ${p.isHero ? 'hero' : ''} ${p.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''}`}
                     key={p.id}
                   >
                     <div className="seat-head">
@@ -129,8 +272,9 @@ export default function App() {
                             </>
                           )}
                     </div>
-                    {lastAction?.seat === index && !state.summary && (
-                      <div key={`${state.handId}-${state.actions.length}`} className="action-badge">{lastAction.type.toUpperCase()}</div>
+                    {thinkingSeat === index && <div className="thinking">Thinking…</div>}
+                    {seatBadges[index] && !state.summary && (
+                      <div key={`${state.handId}-${index}-${seatBadges[index]}`} className="action-badge">{seatBadges[index]}</div>
                     )}
                   </article>
                 ))}
@@ -138,21 +282,29 @@ export default function App() {
             </div>
 
             <div className="action-dock">
+              <div className="pace-row">
+                <label>Pace</label>
+                {(['Fast', 'Normal', 'Study'] as PaceMode[]).map((p) => (
+                  <button key={p} className={paceMode === p ? 'active' : ''} onClick={() => setPaceMode(p)}>
+                    {p}
+                  </button>
+                ))}
+              </div>
               <div className="primary-actions">
-                <button className="danger" disabled={!!state.summary} onClick={() => heroAction('fold')}>
+                <button className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
                   Fold
                 </button>
                 <button
                   className={`neutral ${legal.canCheck ? 'soft' : ''}`}
-                  disabled={!!state.summary}
+                  disabled={!!state.summary || processing}
                   onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
                 >
                   {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
                 </button>
-                <button className="accent" disabled={!canRaise} onClick={() => heroAction('raise', betAmount)}>
+                <button className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', betAmount)}>
                   Bet / Raise
                 </button>
-                <button className="gold" disabled={!!state.summary} onClick={() => heroAction('all-in')}>
+                <button className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
                   All-in
                 </button>
               </div>
@@ -247,13 +399,48 @@ export default function App() {
 
       {mode !== 'full-ring' && mode !== 'replay' && drill && (
         <section className="drill">
-          <h2>{modeLabel[mode]}</h2>
+          <h2>{modeLabel[mode]} · Score {trainingScore}</h2>
+          <div className="drill-actions">
+            <button className={seedMode ? 'active' : ''} onClick={() => setSeedMode((v) => !v)}>
+              {seedMode ? 'Deterministic ON' : 'Deterministic OFF'}
+            </button>
+            <label>Seed</label>
+            <input type="number" value={drillSeed} onChange={(e) => setDrillSeed(Number(e.target.value) || 0)} />
+            {drill.seedTag && <span>Spot {drill.seedTag}</span>}
+          </div>
           <p>{drill.prompt}</p>
           <div>
             Hero: {drill.heroCards.map(formatCard).join(' ')} {drill.board ? `| Board: ${drill.board.map(formatCard).join(' ')}` : ''}
           </div>
-          <div>{drill.choices.map((c) => <button key={c} onClick={() => setDrill(nextDrillSpot(mode))}>{c}</button>)}</div>
+          <div className="drill-actions">
+            {drill.choices.map((c) => (
+              <button key={c} onClick={() => scoreDrill(c)}>{c.toUpperCase()}</button>
+            ))}
+            <button className="neutral" onClick={() => {
+              const next = buildNextDrill(mode, 1);
+              setDrill(next);
+              if (seedMode) setDrillIndex((v) => v + 1);
+              setFeedback(null);
+            }}>
+              Next Spot
+            </button>
+          </div>
           <p>Coach note: {drill.note}</p>
+          {feedback && (
+            <div className={`feedback-card ${verdictTone(feedback.verdict)}`}>
+              <div className="feedback-head">
+                <span className="verdict-badge">{feedback.verdict}</span>
+                <strong>{feedback.scoreDelta >= 0 ? '+' : ''}{feedback.scoreDelta}</strong>
+              </div>
+              {feedback.boardTexture && <p><strong>Board texture:</strong> {feedback.boardTexture}</p>}
+              {feedback.rangeAdvantage && <p><strong>Range edge:</strong> {feedback.rangeAdvantage}</p>}
+              <p><strong>Best action:</strong> {feedback.bestAction}</p>
+              <p><strong>Also okay:</strong> {feedback.acceptableAlternatives.join(', ') || '—'}</p>
+              <p><strong>EV band:</strong> {feedback.evBand} · <strong>Confidence:</strong> {feedback.confidence}</p>
+              <p><strong>Why:</strong> {feedback.shortExplanation}</p>
+              <p><strong>Coach note:</strong> {feedback.coachNote}</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -261,7 +448,13 @@ export default function App() {
         <section className="drill">
           <h2>Replay Last Hand</h2>
           <p>Step {replayStep + 1} / {Math.max(replayActions.length, 1)}</p>
-          {replayActions[replayStep] && <p>{replayActions[replayStep].street.toUpperCase()}: {replayActions[replayStep].playerName} {replayActions[replayStep].type} {replayActions[replayStep].amount}</p>}
+          {replayActions[replayStep] && (
+            <div className="feedback-card okay">
+              <p><strong>{replayActions[replayStep].street}</strong> · {replayActions[replayStep].who} {replayActions[replayStep].did}</p>
+              <p><strong>Pot after action:</strong> {replayActions[replayStep].potAfter}</p>
+              <p><strong>Interpretation:</strong> {replayActions[replayStep].interpretation}</p>
+            </div>
+          )}
           <button onClick={() => setReplayStep((s) => Math.max(0, s - 1))}>Prev</button>
           <button onClick={() => setReplayStep((s) => Math.min(replayActions.length - 1, s + 1))}>Next</button>
         </section>

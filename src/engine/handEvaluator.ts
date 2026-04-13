@@ -27,9 +27,12 @@ export const evaluateBestHand = (cards: Card[]): HandResult => {
   const rankCounts = [...countRanks(cards).entries()].sort((a,b) => b[1]-a[1] || b[0]-a[0]);
 
   let flushCards: Card[] | null = null;
-  suits.forEach((suitCards) => {
-    if (suitCards.length >= 5) flushCards = suitCards;
-  });
+  for (const suitCards of suits.values()) {
+    if (suitCards.length >= 5) {
+      flushCards = suitCards;
+      break;
+    }
+  }
 
   if (flushCards) {
     const straightFlushHigh = detectStraight(flushCards.map((c) => rankValue(c.rank)));

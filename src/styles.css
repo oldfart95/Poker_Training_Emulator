@@ -112,6 +112,7 @@ button.danger { background: linear-gradient(180deg, #7a4855, #4f2c34); }
 }
 .pot-plaque .label { font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); display: block; }
 .pot-pop { animation: potHop 180ms ease-out; }
+.pot-plaque.pot-pulse { box-shadow: 0 0 0 1px #f4d28a66, 0 0 20px #f3ce8c57, 0 8px 18px #00000055; }
 @keyframes potHop { from { transform: translateY(3px) scale(0.95); opacity: 0.7; } to { transform: none; opacity: 1; } }
 
 .street-banner {
@@ -191,6 +192,13 @@ button.danger { background: linear-gradient(180deg, #7a4855, #4f2c34); }
   min-height: 58px;
   animation: quickFade 220ms ease;
 }
+.board-lane.street-transition .poker-card {
+  animation: boardReveal 240ms ease-out;
+}
+@keyframes boardReveal {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 .street-hint { color: #f7ecd0c2; font-size: 0.85rem; }
 
 .poker-card {
@@ -260,6 +268,12 @@ button.danger { background: linear-gradient(180deg, #7a4855, #4f2c34); }
   color: #faebc6;
   animation: badgePop 260ms ease;
 }
+.thinking {
+  margin-top: 6px;
+  font-size: 0.68rem;
+  color: #f9e6b8;
+  opacity: 0.9;
+}
 @keyframes badgePop {
   from { opacity: 0; transform: translateY(5px) scale(0.9); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -279,6 +293,13 @@ button.danger { background: linear-gradient(180deg, #7a4855, #4f2c34); }
   background: linear-gradient(180deg, #1d1622, #161118);
   border: 1px solid #ffffff10;
 }
+.pace-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.pace-row label { color: var(--muted); font-size: 0.82rem; }
 .primary-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .sizing-controls { margin-top: 10px; display: grid; gap: 8px; }
 .slider-row { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
@@ -345,6 +366,38 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
 .drill {
   margin-top: 12px;
   padding: 14px;
+}
+.drill-actions { margin: 10px 0; display: flex; gap: 7px; flex-wrap: wrap; }
+.drill-actions input {
+  background: #1b1420;
+  border: 1px solid #ffffff30;
+  color: var(--ivory);
+  border-radius: 8px;
+  padding: 6px 8px;
+  width: 120px;
+}
+.feedback-card {
+  margin-top: 10px;
+  border: 1px solid #ffffff1a;
+  border-radius: 10px;
+  padding: 10px;
+  background: #1a1420;
+}
+.feedback-card.best { border-color: #7ecf9a88; background: #163023aa; }
+.feedback-card.good { border-color: #90c9be77; background: #162830aa; }
+.feedback-card.okay { border-color: #d9c28b66; background: #2f2719a1; }
+.feedback-card.mistake { border-color: #da9d7a77; background: #322016a1; }
+.feedback-card.punt { border-color: #d17b8f77; background: #341b24a8; }
+.feedback-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.verdict-badge {
+  border-radius: 999px;
+  border: 1px solid #ffffff33;
+  padding: 2px 8px;
+  font-size: 0.72rem;
 }
 
 @media (max-width: 1180px) {

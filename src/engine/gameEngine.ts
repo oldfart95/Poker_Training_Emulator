@@ -147,7 +147,19 @@ const finalizeHand = (s: GameState, reachedShowdown: boolean): GameState => {
   const hero = s.players[0];
   const delta = hero.stack - s.heroStackAtHandStart;
   const recap = rateHand(hero, s.board, s.actions, delta, s.bb, s.players);
-  s.summary = { id: s.handId, heroCards: hero.holeCards, heroPosition: hero.position, board: [...s.board], actions: [...s.actions], resultChips: delta, resultBb: delta/s.bb, ...recap };
+  s.summary = {
+    id: s.handId,
+    heroCards: hero.holeCards,
+    heroPosition: hero.position,
+    board: [...s.board],
+    actions: [...s.actions],
+    startingPot: s.sb + s.bb,
+    sb: s.sb,
+    bb: s.bb,
+    resultChips: delta,
+    resultBb: delta / s.bb,
+    ...recap
+  };
   s.stats.winLossBb += delta / s.bb;
   s.stats.biggestWinBb = Math.max(s.stats.biggestWinBb, delta/s.bb);
   s.stats.biggestPuntBb = Math.min(s.stats.biggestPuntBb, delta/s.bb);
