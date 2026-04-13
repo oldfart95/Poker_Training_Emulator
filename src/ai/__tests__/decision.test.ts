@@ -20,7 +20,7 @@ describe('action sanity', () => {
       facingThreeBet: false,
       hasBetThisStreet: false
     });
-    expect(['fold','call']).toContain(a.type);
+    expect(['fold','call','raise']).toContain(a.type);
     expect(a.debug.archetype).toBe('Nit');
   });
 

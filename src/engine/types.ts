@@ -43,6 +43,9 @@ export interface HandSummary {
   heroPosition: string;
   board: Card[];
   actions: ActionRecord[];
+  startingPot: number;
+  sb: number;
+  bb: number;
   resultChips: number;
   resultBb: number;
   rating: 'good'|'reasonable'|'questionable'|'punt';
