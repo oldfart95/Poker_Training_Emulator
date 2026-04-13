@@ -1,4 +1,5 @@
 import { ActionRecord, HandSummary, Player } from '../engine/types';
+import { StrategyMode } from '../strategy/types';
 
 export interface ReplayStep {
   who: string;
@@ -6,6 +7,7 @@ export interface ReplayStep {
   potAfter: number;
   interpretation: string;
   street: string;
+  mode: StrategyMode;
 }
 
 const actionTone = (action: ActionRecord): 'value-heavy' | 'wide' | 'passive' | 'sticky' | 'overaggressive' => {
@@ -24,7 +26,7 @@ const archetypeRead = (profile: string | undefined): string => {
   return 'passive';
 };
 
-export const formatReplaySteps = (summary: HandSummary | undefined, players: Player[]): ReplayStep[] => {
+export const formatReplaySteps = (summary: HandSummary | undefined, players: Player[], strategyMode: StrategyMode = 'blueprint'): ReplayStep[] => {
   if (!summary) return [];
   let pot = summary.startingPot;
 
@@ -39,7 +41,10 @@ export const formatReplaySteps = (summary: HandSummary | undefined, players: Pla
       did: `${action.type.toUpperCase()}${action.amount ? ` ${action.amount}` : ''}`,
       potAfter: pot,
       street: action.street.toUpperCase(),
-      interpretation: `${tone} line in this node; ${player?.name ?? action.playerName} trends ${profileLean} here.`
+      mode: strategyMode,
+      interpretation: strategyMode === 'exploit'
+        ? `Exploit Mode: ${tone} line; ${player?.name ?? action.playerName} trends ${profileLean}, so punish likely pool leaks.`
+        : `Blueprint Mode: ${tone} line in this abstraction node; ${player?.name ?? action.playerName} trends ${profileLean} here.`
     };
   });
 };

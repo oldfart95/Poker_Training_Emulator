@@ -6,6 +6,7 @@ import { ActionRecord, Card, HandSummary, Player, SessionStats, Street } from '.
 import { rateHand } from '../training/coach';
 import { Position } from '../ai/tuning/ranges';
 import { Archetype } from '../ai/tuning/archetypes';
+import { StrategyMode } from '../strategy/types';
 
 export interface GameState {
   handId: number;
@@ -28,6 +29,7 @@ export interface GameState {
   handStartingPot: number;
   stats: SessionStats;
   botDebug?: DecisionDebug;
+  strategyMode: StrategyMode;
 }
 
 export const initialStats = (): SessionStats => ({
@@ -74,7 +76,8 @@ export const createInitialState = (): GameState => {
     heroStackAtHandStart: 10000,
     handStartingPot: 0,
     stats: initialStats(),
-    botDebug: undefined
+    botDebug: undefined,
+    strategyMode: 'exploit'
   };
 };
 
@@ -245,8 +248,9 @@ export const applyAction = (state: GameState, seat: number, type: 'fold'|'check'
   return s;
 };
 
-export const runBotsUntilHero = (state: GameState): GameState => {
+export const runBotsUntilHero = (state: GameState, strategyMode: StrategyMode = state.strategyMode): GameState => {
   let s = structuredClone(state);
+  s.strategyMode = strategyMode;
   while (!s.waitingForHero && !s.summary) {
     const seat = s.currentSeat;
     const p = s.players[seat];
@@ -266,7 +270,8 @@ export const runBotsUntilHero = (state: GameState): GameState => {
       playersInHand: alive(s).length,
       wasPreflopAggressor: s.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
       facingThreeBet: s.street === 'preflop' && s.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
-      hasBetThisStreet: s.actions.some((a) => a.seat === seat && a.street === s.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'))
+      hasBetThisStreet: s.actions.some((a) => a.seat === seat && a.street === s.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')),
+      strategyMode
     });
     s.botDebug = decision.debug;
     s = applyAction(s, seat, decision.type, decision.amount);

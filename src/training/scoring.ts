@@ -1,12 +1,15 @@
 import { Card } from '../engine/types';
 import { rankValue } from '../engine/deck';
 import { blindDefenseTargets, cBetTargets, confidenceFromFrequency, rfiTargetPct } from './pseudoSolverData';
+import { StrategyMode } from '../strategy/types';
+import { Archetype } from '../ai/tuning/archetypes';
 
 export type TrainingAction = 'fold' | 'open' | 'call' | '3-bet' | 'c-bet 33%' | 'c-bet 75%' | 'check';
 export type TrainingVerdict = 'Best' | 'Good' | 'Okay' | 'Mistake' | 'Punt';
 export type EvBand = 'Clear +EV' | 'Close' | 'Clear -EV';
 
 export interface TrainingFeedback {
+  mode: StrategyMode;
   verdict: TrainingVerdict;
   scoreDelta: number;
   shortExplanation: string;
@@ -23,17 +26,23 @@ export interface PreflopContext {
   position: 'UTG' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB';
   facingOpen: boolean;
   openSizeBb?: number;
+  strategyMode?: StrategyMode;
+  opponentProfile?: Archetype;
 }
 
 export interface CBetContext {
   heroWasAggressor: boolean;
   potType: 'single-raised' | '3-bet';
+  strategyMode?: StrategyMode;
+  opponentProfile?: Archetype;
 }
 
 export interface BlindDefenseContext {
   heroSeat: 'SB' | 'BB';
   villainOpenPosition: 'CO' | 'BTN';
   openSizeBb: number;
+  strategyMode?: StrategyMode;
+  opponentProfile?: Archetype;
 }
 
 const scoreForVerdict: Record<TrainingVerdict, number> = {
@@ -72,6 +81,7 @@ const bestAndAlternatives = (weights: Record<TrainingAction, number>) => {
 };
 
 export const evaluatePreflop = (heroCards: Card[], action: TrainingAction, context: PreflopContext): TrainingFeedback => {
+  const strategyMode = context.strategyMode ?? 'blueprint';
   const [hi, lo] = rankHand(heroCards);
   const suited = isSuited(heroCards);
   const pair = isPair(heroCards);
@@ -100,6 +110,11 @@ export const evaluatePreflop = (heroCards: Card[], action: TrainingAction, conte
     weights.call = callFreq;
     weights.fold = Math.max(0.06, 1 - threeBetFreq - callFreq);
   }
+  if (strategyMode === 'exploit' && context.opponentProfile === 'Calling Station' && context.facingOpen) {
+    weights.call += 0.12;
+    weights['3-bet'] *= 0.75;
+    weights.fold += 0.06;
+  }
 
   const pickedFreq = weights[action] ?? 0;
   const verdict = verdictFromFrequency(pickedFreq);
@@ -107,12 +122,19 @@ export const evaluatePreflop = (heroCards: Card[], action: TrainingAction, conte
   const confidence = confidenceFromFrequency(pickedFreq);
 
   return {
+    mode: strategyMode,
     verdict,
     scoreDelta: scoreForVerdict[verdict],
-    shortExplanation: `${context.position} baseline width is about ${width}% RFI; this combo scores ${Math.round((1 - weights.fold) * 100)}% playable in this node.`,
+    shortExplanation: strategyMode === 'exploit'
+      ? `Exploit baseline vs ${context.opponentProfile ?? 'pool'}: prioritize practical punish lines over thin preflop bluffs in this node.`
+      : `${context.position} baseline width is about ${width}% RFI; this combo scores ${Math.round((1 - weights.fold) * 100)}% playable in this node.`,
     bestAction: best,
     acceptableAlternatives: alternatives,
-    coachNote: coachWithConfidence('Pseudo-solver blend: treat close frequencies as mix spots and prefer lower-variance lines if unsure.', confidence),
+    coachNote: coachWithConfidence(
+      strategyMode === 'exploit'
+        ? 'Against loose pools, reduce fancy preflop mixes and lean into hands that realize cleanly postflop.'
+        : 'Pseudo-solver blend: treat close frequencies as mix spots and prefer lower-variance lines if unsure.',
+      confidence),
     evBand: evBandFromFrequency(pickedFreq),
     confidence
   };
@@ -135,6 +157,7 @@ const rangeAdvantageLabel = (board: Card[], heroWasAggressor: boolean): string =
 };
 
 export const evaluateCBet = (heroCards: Card[], board: Card[], action: TrainingAction, context: CBetContext): TrainingFeedback => {
+  const strategyMode = context.strategyMode ?? 'blueprint';
   const texture = boardTextureLabel(board);
   const rangeAdvantage = rangeAdvantageLabel(board, context.heroWasAggressor);
   const topBroadway = heroCards.some((c) => ['A', 'K'].includes(c.rank));
@@ -158,6 +181,11 @@ export const evaluateCBet = (heroCards: Card[], board: Card[], action: TrainingA
     weights['c-bet 75%'] += 0.12;
     weights.check = Math.max(0.2, weights.check - 0.06);
   }
+  if (strategyMode === 'exploit' && context.opponentProfile === 'Calling Station') {
+    weights['c-bet 33%'] *= 0.75;
+    weights.check += 0.12;
+    weights['c-bet 75%'] += 0.08;
+  }
 
   const pickedFreq = weights[action] ?? 0;
   const verdict = verdictFromFrequency(pickedFreq);
@@ -165,12 +193,19 @@ export const evaluateCBet = (heroCards: Card[], board: Card[], action: TrainingA
   const confidence = confidenceFromFrequency(pickedFreq);
 
   return {
+    mode: strategyMode,
     verdict,
     scoreDelta: scoreForVerdict[verdict],
-    shortExplanation: `Texture ${texture} leans ${best}. Sizing shifts with equity denial needs and range interaction.`,
+    shortExplanation: strategyMode === 'exploit'
+      ? `Against ${context.opponentProfile ?? 'this profile'}, value-heavy betting outperforms broad bluffing on ${texture} textures.`
+      : `Texture ${texture} leans ${best}. Sizing shifts with equity denial needs and range interaction.`,
     bestAction: best,
     acceptableAlternatives: alternatives,
-    coachNote: coachWithConfidence('Use small size often on dry boards; dynamic boards justify bigger bets or checks depending on nut advantage.', confidence),
+    coachNote: coachWithConfidence(
+      strategyMode === 'exploit'
+        ? 'Against Calling Stations, bet for value and cut low-fold-equity bluffs; versus Nits, selective stabs can print.'
+        : 'Use small size often on dry boards; dynamic boards justify bigger bets or checks depending on nut advantage.',
+      confidence),
     boardTexture: texture,
     rangeAdvantage,
     evBand: evBandFromFrequency(pickedFreq),
@@ -179,6 +214,7 @@ export const evaluateCBet = (heroCards: Card[], board: Card[], action: TrainingA
 };
 
 export const evaluateBlindDefense = (heroCards: Card[], action: TrainingAction, context: BlindDefenseContext): TrainingFeedback => {
+  const strategyMode = context.strategyMode ?? 'blueprint';
   const [hi, lo] = rankHand(heroCards);
   const suited = isSuited(heroCards);
   const connected = isConnected(heroCards);
@@ -201,6 +237,14 @@ export const evaluateBlindDefense = (heroCards: Card[], action: TrainingAction, 
     'c-bet 75%': 0,
     check: 0
   };
+  if (strategyMode === 'exploit' && context.opponentProfile === 'Maniac') {
+    weights.call += 0.12;
+    weights.fold = Math.max(0.05, weights.fold - 0.1);
+  }
+  if (strategyMode === 'exploit' && context.opponentProfile === 'Nit') {
+    weights.fold += 0.1;
+    weights.call *= 0.84;
+  }
 
   const pickedFreq = weights[action] ?? 0;
   const verdict = verdictFromFrequency(pickedFreq);
@@ -208,12 +252,19 @@ export const evaluateBlindDefense = (heroCards: Card[], action: TrainingAction, 
   const confidence = confidenceFromFrequency(pickedFreq);
 
   return {
+    mode: strategyMode,
     verdict,
     scoreDelta: scoreForVerdict[verdict],
-    shortExplanation: `${context.heroSeat} vs ${context.villainOpenPosition} baseline defend target is ~${target.defendPct}% with ~${target.threeBetPct}% 3-bets.`,
+    shortExplanation: strategyMode === 'exploit'
+      ? `Exploit adjustment vs ${context.opponentProfile ?? 'pool'}: widen bluff-catch vs maniacs, tighten versus underbluffed nits.`
+      : `${context.heroSeat} vs ${context.villainOpenPosition} baseline defend target is ~${target.defendPct}% with ~${target.threeBetPct}% 3-bets.`,
     bestAction: best,
     acceptableAlternatives: alternatives,
-    coachNote: coachWithConfidence('Defend playability: suitedness/connectivity realize equity better than disconnected offsuit combos.', confidence),
+    coachNote: coachWithConfidence(
+      strategyMode === 'exploit'
+        ? 'Against a Maniac, this bluff-catch gains value; against a Nit, disciplined folds are often best.'
+        : 'Defend playability: suitedness/connectivity realize equity better than disconnected offsuit combos.',
+      confidence),
     evBand: evBandFromFrequency(pickedFreq),
     confidence
   };
