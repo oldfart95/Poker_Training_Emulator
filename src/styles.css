@@ -1,0 +1,14 @@
+:root { font-family: 'Trebuchet MS', system-ui, sans-serif; color: #f8f2dd; background: #221b2a; }
+body { margin: 0; }
+.app { padding: 12px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.menu button { margin: 0 4px; }
+button { border: 2px solid #171018; background: linear-gradient(#8f6f47, #5f4329); color: #fff7de; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.layout { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+.table, .study, .drill { background: #2d2234; border: 3px solid #151018; border-radius: 10px; padding: 10px; box-shadow: inset 0 0 0 2px #5a4861; }
+.board .card, .seat { background: #3d2f46; border: 2px solid #211926; border-radius: 8px; padding: 4px 8px; margin: 2px; display: inline-block; }
+.seats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.seat.hero { outline: 2px solid #7ec8ff; }
+.seat.folded { opacity: 0.45; }
+.actions { margin-top: 10px; display: grid; gap: 6px; }
+.presets button { margin-right: 4px; }
