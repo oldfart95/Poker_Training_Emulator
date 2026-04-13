@@ -25,6 +25,7 @@ export interface GameState {
   waitingForHero: boolean;
   summary?: HandSummary;
   heroStackAtHandStart: number;
+  handStartingPot: number;
   stats: SessionStats;
   botDebug?: DecisionDebug;
 }
@@ -71,6 +72,7 @@ export const createInitialState = (): GameState => {
     lastAggressor: -1,
     waitingForHero: false,
     heroStackAtHandStart: 10000,
+    handStartingPot: 0,
     stats: initialStats(),
     botDebug: undefined
   };
@@ -110,6 +112,7 @@ export const beginHand = (state: GameState): GameState => {
   const bbSeat = (s.dealer + 2) % 6;
   postBlind(s, sbSeat, s.sb);
   postBlind(s, bbSeat, s.bb);
+  s.handStartingPot = s.pot;
   s.currentSeat = nextActiveSeat(s, bbSeat);
   s.waitingForHero = s.currentSeat === 0;
   s.stats.hands += 1;
@@ -153,7 +156,7 @@ const finalizeHand = (s: GameState, reachedShowdown: boolean): GameState => {
     heroPosition: hero.position,
     board: [...s.board],
     actions: [...s.actions],
-    startingPot: s.sb + s.bb,
+    startingPot: s.handStartingPot,
     sb: s.sb,
     bb: s.bb,
     resultChips: delta,

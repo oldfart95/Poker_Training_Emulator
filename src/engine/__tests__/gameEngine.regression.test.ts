@@ -33,4 +33,18 @@ describe('game engine regressions', () => {
     expect(ended.summary?.resultBb).toBe((started.sb + started.bb) / started.bb);
     expect(ended.stats.winLossBb).toBe((started.sb + started.bb) / started.bb);
   });
+
+  it('tracks starting pot from actual blind collections when blind is short-stacked', () => {
+    const state = createInitialState();
+    state.players[3].stack = 30;
+    const started = beginHand(state);
+    started.players.forEach((p) => {
+      p.folded = p.seat !== 0 && p.seat !== 1;
+    });
+    started.currentSeat = 1;
+
+    const ended = applyAction(started, 1, 'fold');
+
+    expect(ended.summary?.startingPot).toBe(started.sb + Math.min(started.bb, 30));
+  });
 });
