@@ -10,6 +10,7 @@ import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/paci
 import { nextDrillSpot } from './training/drills';
 import { formatReplaySteps } from './training/replay';
 import { BlindDefenseContext, CBetContext, evaluateBlindDefense, evaluateCBet, evaluatePreflop, PreflopContext, TrainingAction, TrainingFeedback } from './training/scoring';
+import { StrategyMode } from './strategy/types';
 
 const modeLabel: Record<Mode, string> = {
   'full-ring': 'Full Ring Loop',
@@ -27,6 +28,7 @@ const streetMeta = {
   river: { icon: '✦', label: 'River' },
   showdown: { icon: '◆', label: 'Showdown' }
 } as const;
+const strategyModeLabel: Record<StrategyMode, string> = { exploit: 'Exploit Mode', blueprint: 'Blueprint Mode' };
 
 const ChipStack = ({ amount }: { amount: number }) => <span className="chip-stack">{amount}</span>;
 
@@ -54,7 +56,8 @@ export default function App() {
   const storedPace = localStorage.getItem('ppp:pace');
   const initialPace: PaceMode = storedPace === 'Fast' || storedPace === 'Study' ? storedPace : 'Normal';
   const [mode, setMode] = useState<Mode>('full-ring');
-  const [state, setState] = useState(() => runBotsUntilHero(beginHand(createInitialState())));
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>('exploit');
+  const [state, setState] = useState(() => runBotsUntilHero(beginHand(createInitialState()), 'exploit'));
   const [processing, setProcessing] = useState(false);
   const [replayStep, setReplayStep] = useState(0);
   const [betAmount, setBetAmount] = useState(250);
@@ -75,7 +78,7 @@ export default function App() {
 
   const pace = paceProfiles[paceMode];
 
-  const replayActions = useMemo(() => formatReplaySteps(state.summary, state.players), [state.summary, state.players]);
+  const replayActions = useMemo(() => formatReplaySteps(state.summary, state.players, strategyMode), [state.summary, state.players, strategyMode]);
   const buildNextDrill = (targetMode: Mode, indexOffset = 0) =>
     nextDrillSpot(targetMode, seedMode ? { seed: drillSeed, index: drillIndex + indexOffset } : undefined);
 
@@ -129,7 +132,8 @@ export default function App() {
         playersInHand: current.players.filter((p) => !p.folded).length,
         wasPreflopAggressor: current.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
         facingThreeBet: current.street === 'preflop' && current.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
-        hasBetThisStreet: current.actions.some((a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'))
+        hasBetThisStreet: current.actions.some((a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')),
+        strategyMode
       });
 
       setThinkingSeat(null);
@@ -200,11 +204,11 @@ export default function App() {
     let result: TrainingFeedback;
 
     if (drill.category === 'preflop-trainer') {
-      result = evaluatePreflop(drill.heroCards, action, drill.context as PreflopContext);
+      result = evaluatePreflop(drill.heroCards, action, { ...(drill.context as PreflopContext), strategyMode, opponentProfile: 'Calling Station' });
     } else if (drill.category === 'cbet-trainer') {
-      result = evaluateCBet(drill.heroCards, drill.board ?? [], action, drill.context as CBetContext);
+      result = evaluateCBet(drill.heroCards, drill.board ?? [], action, { ...(drill.context as CBetContext), strategyMode, opponentProfile: 'Nit' });
     } else {
-      result = evaluateBlindDefense(drill.heroCards, action, drill.context as BlindDefenseContext);
+      result = evaluateBlindDefense(drill.heroCards, action, { ...(drill.context as BlindDefenseContext), strategyMode, opponentProfile: 'Maniac' });
     }
 
     setFeedback(result);
@@ -222,6 +226,13 @@ export default function App() {
           {(Object.keys(modeLabel) as Mode[]).map((m) => (
             <button key={m} className={mode === m ? 'active' : ''} onClick={() => handleMode(m)}>
               {modeLabel[m]}
+            </button>
+          ))}
+        </div>
+        <div className="menu">
+          {(Object.keys(strategyModeLabel) as StrategyMode[]).map((m) => (
+            <button key={m} className={strategyMode === m ? 'active' : ''} onClick={() => setStrategyMode(m)}>
+              {strategyModeLabel[m]}
             </button>
           ))}
         </div>
@@ -340,6 +351,7 @@ export default function App() {
 
           <aside className="study-panel">
             <h3>Study Recap</h3>
+            <p className="tagline">Active strategy: <strong>{strategyModeLabel[strategyMode]}</strong></p>
             {state.summary ? (
               <div className="summary-block" key={state.summary.id}>
                 <div className="summary-line">{state.summary.heroCards.map(formatCard).join(' ')} • {state.summary.heroPosition}</div>
@@ -374,8 +386,10 @@ export default function App() {
                 <div className="debug-panel">
                   <h4>Bot Debug</h4>
                   <div>Archetype: {state.botDebug.archetype}</div>
+                  <div>Mode: {state.botDebug.mode}</div>
                   <div>Hand bucket: {state.botDebug.bucket}</div>
-                  <div>Texture: {state.botDebug.texture}</div>
+                  <div>Board bucket: {state.botDebug.texture}</div>
+                  {state.botDebug.adjustments.length > 0 && <div>Adjustments: {state.botDebug.adjustments.join(' | ')}</div>}
                   <div>Reason: {state.botDebug.reason}</div>
                   <div className="debug-weights">
                     {Object.entries(state.botDebug.weights).map(([k, v]) => (
@@ -399,7 +413,7 @@ export default function App() {
 
       {mode !== 'full-ring' && mode !== 'replay' && drill && (
         <section className="drill">
-          <h2>{modeLabel[mode]} · Score {trainingScore}</h2>
+          <h2>{modeLabel[mode]} · {strategyModeLabel[strategyMode]} · Score {trainingScore}</h2>
           <div className="drill-actions">
             <button className={seedMode ? 'active' : ''} onClick={() => setSeedMode((v) => !v)}>
               {seedMode ? 'Deterministic ON' : 'Deterministic OFF'}
@@ -429,6 +443,7 @@ export default function App() {
           {feedback && (
             <div className={`feedback-card ${verdictTone(feedback.verdict)}`}>
               <div className="feedback-head">
+                <span className="verdict-badge">{strategyModeLabel[strategyMode]}</span>
                 <span className="verdict-badge">{feedback.verdict}</span>
                 <strong>{feedback.scoreDelta >= 0 ? '+' : ''}{feedback.scoreDelta}</strong>
               </div>
@@ -447,6 +462,7 @@ export default function App() {
       {mode === 'replay' && (
         <section className="drill">
           <h2>Replay Last Hand</h2>
+          <p>Mode: {strategyModeLabel[strategyMode]}</p>
           <p>Step {replayStep + 1} / {Math.max(replayActions.length, 1)}</p>
           {replayActions[replayStep] && (
             <div className="feedback-card okay">

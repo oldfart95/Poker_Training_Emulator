@@ -21,10 +21,12 @@ describe('replay formatting', () => {
         tighter: '',
         aggressive: ''
       },
-      [{ id: 'p1', name: 'Nit Villain', isHero: false, stack: 1000, holeCards: [], folded: false, allIn: false, betThisStreet: 0, totalContributed: 0, seat: 1, position: 'HJ', profile: 'Nit' }]
+      [{ id: 'p1', name: 'Nit Villain', isHero: false, stack: 1000, holeCards: [], folded: false, allIn: false, betThisStreet: 0, totalContributed: 0, seat: 1, position: 'HJ', profile: 'Nit' }],
+      'exploit'
     );
 
     expect(steps[0].potAfter).toBe(400);
     expect(steps[0].interpretation.length).toBeGreaterThan(10);
+    expect(steps[0].mode).toBe('exploit');
   });
 });

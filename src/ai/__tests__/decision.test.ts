@@ -45,4 +45,45 @@ describe('action sanity', () => {
     expect(['raise','check']).toContain(a.type);
     expect(a.debug.reason.length).toBeGreaterThan(5);
   });
+
+  it('supports strategy mode switching in debug output', () => {
+    const exploit = decideBotAction({
+      archetype: 'Calling Station',
+      cards: [{ rank: 'A', suit: '♣' }, { rank: '5', suit: '♦' }],
+      board: [{ rank: 'K', suit: '♦' }, { rank: '7', suit: '♥' }, { rank: '2', suit: '♣' }],
+      previousBoard: [],
+      street: 'flop',
+      toCall: 200,
+      pot: 800,
+      minRaise: 400,
+      stack: 9500,
+      canCheck: false,
+      position: 'BTN',
+      playersInHand: 2,
+      wasPreflopAggressor: false,
+      facingThreeBet: false,
+      hasBetThisStreet: false,
+      strategyMode: 'exploit'
+    });
+    const blueprint = decideBotAction({
+      archetype: 'Calling Station',
+      cards: [{ rank: 'A', suit: '♣' }, { rank: '5', suit: '♦' }],
+      board: [{ rank: 'K', suit: '♦' }, { rank: '7', suit: '♥' }, { rank: '2', suit: '♣' }],
+      previousBoard: [],
+      street: 'flop',
+      toCall: 200,
+      pot: 800,
+      minRaise: 400,
+      stack: 9500,
+      canCheck: false,
+      position: 'BTN',
+      playersInHand: 2,
+      wasPreflopAggressor: false,
+      facingThreeBet: false,
+      hasBetThisStreet: false,
+      strategyMode: 'blueprint'
+    });
+    expect(exploit.debug.mode).toBe('exploit');
+    expect(blueprint.debug.mode).toBe('blueprint');
+  });
 });

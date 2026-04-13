@@ -34,4 +34,22 @@ describe('training scoring', () => {
     expect(['Mistake', 'Punt']).toContain(result.verdict);
     expect(result.bestAction).toBe('FOLD');
   });
+
+  it('produces different feedback language by strategy mode', () => {
+    const blueprint = evaluateCBet(
+      [{ rank: 'A', suit: '♠' }, { rank: 'Q', suit: '♣' }],
+      [{ rank: 'K', suit: '♦' }, { rank: '7', suit: '♣' }, { rank: '2', suit: '♥' }],
+      'check',
+      { heroWasAggressor: true, potType: 'single-raised', strategyMode: 'blueprint', opponentProfile: 'Calling Station' }
+    );
+    const exploit = evaluateCBet(
+      [{ rank: 'A', suit: '♠' }, { rank: 'Q', suit: '♣' }],
+      [{ rank: 'K', suit: '♦' }, { rank: '7', suit: '♣' }, { rank: '2', suit: '♥' }],
+      'check',
+      { heroWasAggressor: true, potType: 'single-raised', strategyMode: 'exploit', opponentProfile: 'Calling Station' }
+    );
+    expect(blueprint.mode).toBe('blueprint');
+    expect(exploit.mode).toBe('exploit');
+    expect(exploit.shortExplanation).toContain('Against');
+  });
 });
