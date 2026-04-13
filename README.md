@@ -64,3 +64,8 @@ npm run test
 6. Optional CRT/pixel shader and dark/sepia theme toggles.
 7. Hotkeys for fold/check/raise presets.
 8. Side-pot solver-level edge-case validation harness.
+
+
+## Troubleshooting
+- If `npm install` fails with a registry 403 in restricted environments, run the project in a network-enabled environment with npm registry access.
+- If `npm run test` reports `vitest: not found`, install dependencies first with `npm install`.
