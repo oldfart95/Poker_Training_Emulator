@@ -44,14 +44,14 @@ npm run test
 
 ## Architecture notes
 - `src/engine/`: pure poker logic (deck, evaluator, game flow, action legality)
-- `src/ai/`: bot profiles + heuristic decision logic
+- `src/ai/`: decision engine + central tuning configs (`tuning/`) for ranges, c-bets, barrel/bluff frequencies, and thresholds
 - `src/training/`: recap coaching and drill spot generation
 - `src/utils/`: persistence helpers
 - `src/App.tsx`: UI composition and trainer mode switching
 
 ## Known limitations
 - Side pots are not fully implemented yet (main pot flow works; all-in edge-cases with multiple stack depths are a TODO).
-- Bot postflop strategy is heuristic and intentionally not solver-perfect.
+- Bot postflop strategy is heuristic and intentionally not solver-perfect (now bucket/texture aware).
 - Current stats are partial MVP set (3-bet/fold-to-3-bet/c-bet counters scaffolded but not fully wired).
 - Animations are lightweight CSS-style only (no advanced sprite system yet).
 
@@ -63,3 +63,4 @@ npm run test
 5. Export hand history and replay timeline UI polish.
 6. Optional CRT/pixel shader and dark/sepia theme toggles.
 7. Hotkeys for fold/check/raise presets.
+8. Side-pot solver-level edge-case validation harness.

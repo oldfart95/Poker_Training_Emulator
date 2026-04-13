@@ -1,3 +1,6 @@
+import { Archetype } from './tuning/archetypes';
+
+export const botProfiles: Archetype[] = ['Nit', 'TAG', 'LAG', 'Calling Station', 'Maniac'];
 export interface BotProfile {
   name: 'Nit'|'TAG'|'LAG'|'Calling Station'|'Maniac';
   vpip: number;

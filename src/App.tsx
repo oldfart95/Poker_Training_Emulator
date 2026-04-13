@@ -18,6 +18,7 @@ export default function App() {
   const [replayStep, setReplayStep] = useState(0);
   const [betAmount, setBetAmount] = useState(250);
   const [showWhy, setShowWhy] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [drill, setDrill] = useState(() => nextDrillSpot('preflop-trainer'));
 
   const hero = state.players[0];
@@ -91,6 +92,20 @@ export default function App() {
                 <p><em>Aggressive:</em> {state.summary.aggressive}</p>
               </>
             ) : <p>Finish the hand to get coaching.</p>}
+
+            <button onClick={() => setShowDebug((v) => !v)}>{showDebug ? 'Hide Debug' : 'Show Debug'}</button>
+            {showDebug && state.botDebug && (
+              <div>
+                <h4>Bot Debug</h4>
+                <div>Archetype: {state.botDebug.archetype}</div>
+                <div>Hand bucket: {state.botDebug.bucket}</div>
+                <div>Texture: {state.botDebug.texture}</div>
+                <div>Reason: {state.botDebug.reason}</div>
+                <div className="debug-weights">
+                  {Object.entries(state.botDebug.weights).map(([k,v]) => <span key={k}>{k}:{v.toFixed(2)} </span>)}
+                </div>
+              </div>
+            )}
 
             <h4>Session Stats</h4>
             <ul>

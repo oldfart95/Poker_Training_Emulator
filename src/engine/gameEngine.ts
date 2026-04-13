@@ -1,14 +1,17 @@
-import { botDecision } from '../ai/botLogic';
+import { decideBotAction, DecisionDebug } from '../ai/decision';
 import { botProfiles } from '../ai/botProfiles';
 import { compareHands, evaluateBestHand } from './handEvaluator';
 import { createDeck, shuffleDeck } from './deck';
 import { ActionRecord, Card, HandSummary, Player, SessionStats, Street } from './types';
 import { rateHand } from '../training/coach';
+import { Position } from '../ai/tuning/ranges';
+import { Archetype } from '../ai/tuning/archetypes';
 
 export interface GameState {
   handId: number;
   players: Player[];
   board: Card[];
+  previousBoard: Card[];
   deck: Card[];
   pot: number;
   dealer: number;
@@ -22,6 +25,7 @@ export interface GameState {
   waitingForHero: boolean;
   summary?: HandSummary;
   stats: SessionStats;
+  botDebug?: DecisionDebug;
 }
 
 export const initialStats = (): SessionStats => ({
@@ -36,7 +40,7 @@ const POS = ['BTN', 'SB', 'BB', 'UTG', 'HJ', 'CO'];
 export const createInitialState = (): GameState => {
   const players: Player[] = Array.from({ length: 6 }, (_, seat) => ({
     id: `p${seat}`,
-    name: seat === 0 ? 'Hero' : botProfiles[seat - 1].name,
+    name: seat === 0 ? 'Hero' : botProfiles[seat - 1],
     isHero: seat === 0,
     stack: 10000,
     holeCards: [],
@@ -46,13 +50,14 @@ export const createInitialState = (): GameState => {
     totalContributed: 0,
     seat,
     position: '',
-    profile: seat === 0 ? undefined : botProfiles[seat - 1].name
+    profile: seat === 0 ? undefined : botProfiles[seat - 1]
   }));
 
   return {
     handId: 0,
     players,
     board: [],
+    previousBoard: [],
     deck: [],
     pot: 0,
     dealer: 0,
@@ -64,7 +69,8 @@ export const createInitialState = (): GameState => {
     actions: [],
     lastAggressor: -1,
     waitingForHero: false,
-    stats: initialStats()
+    stats: initialStats(),
+    botDebug: undefined
   };
 };
 
@@ -83,7 +89,7 @@ export const beginHand = (state: GameState): GameState => {
   const s: GameState = structuredClone(state);
   s.handId += 1;
   s.dealer = (s.dealer + 1) % s.players.length;
-  s.street = 'preflop'; s.board = []; s.actions = []; s.pot = 0; s.currentBet = s.bb;
+  s.street = 'preflop'; s.board = []; s.previousBoard = []; s.actions = []; s.pot = 0; s.currentBet = s.bb;
   s.deck = shuffleDeck(createDeck());
   s.summary = undefined;
 
@@ -122,6 +128,7 @@ const resetStreetBets = (s: GameState) => {
 };
 
 const moveStreet = (s: GameState) => {
+  s.previousBoard = [...s.board];
   if (s.street === 'preflop') { s.street = 'flop'; s.board.push(s.deck.pop()!, s.deck.pop()!, s.deck.pop()!); }
   else if (s.street === 'flop') { s.street = 'turn'; s.board.push(s.deck.pop()!); }
   else if (s.street === 'turn') { s.street = 'river'; s.board.push(s.deck.pop()!); }
@@ -148,7 +155,7 @@ const showdown = (s: GameState): GameState => {
 
   const hero = s.players[0];
   const delta = hero.stack - 10000;
-  const recap = rateHand(hero, s.board, s.actions, delta, s.bb);
+  const recap = rateHand(hero, s.board, s.actions, delta, s.bb, s.players);
   s.summary = { id: s.handId, heroCards: hero.holeCards, heroPosition: hero.position, board: [...s.board], actions: [...s.actions], resultChips: delta, resultBb: delta/s.bb, ...recap };
   s.stats.winLossBb += delta / s.bb;
   s.stats.biggestWinBb = Math.max(s.stats.biggestWinBb, delta/s.bb);
@@ -215,22 +222,26 @@ export const runBotsUntilHero = (state: GameState): GameState => {
   while (!s.waitingForHero && !s.summary) {
     const seat = s.currentSeat;
     const p = s.players[seat];
-    const profile = botProfiles.find((b) => b.name === p.profile)!;
     const legal = legalActions(s, seat);
-    const action = botDecision({
-      profile,
+    const decision = decideBotAction({
+      archetype: p.profile as Archetype,
       cards: p.holeCards,
       board: s.board,
+      previousBoard: s.previousBoard,
       street: s.street,
       toCall: legal.toCall,
       pot: s.pot,
       minRaise: legal.minRaise,
       stack: p.stack,
       canCheck: legal.canCheck,
-      positionIndex: ['UTG','HJ','CO','BTN','SB','BB'].indexOf(p.position),
-      wasRaised: s.currentBet > s.bb || s.actions.some((a) => a.street === 'preflop' && (a.type === 'raise' || a.type === 'all-in'))
+      position: p.position as Position,
+      playersInHand: alive(s).length,
+      wasPreflopAggressor: s.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
+      facingThreeBet: s.street === 'preflop' && s.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
+      hasBetThisStreet: s.actions.some((a) => a.seat === seat && a.street === s.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'))
     });
-    s = applyAction(s, seat, action.type, action.amount);
+    s.botDebug = decision.debug;
+    s = applyAction(s, seat, decision.type, decision.amount);
   }
   return s;
 };
