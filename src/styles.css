@@ -439,6 +439,14 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
 }
 .help-section h4 { margin: 10px 0 4px; }
 .help-section ul { margin: 0; padding-left: 18px; color: #eee1c0; }
+.disclaimer-modal {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 10px;
+}
+.disclaimer-modal h3 { margin: 0; }
+.disclaimer-modal p { margin: 0; color: #f0e4c7; }
+.disclaimer-modal button { justify-self: end; }
 
 @media (max-width: 1180px) {
   .layout { grid-template-columns: 1fr; }

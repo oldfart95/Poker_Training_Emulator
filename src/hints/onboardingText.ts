@@ -1,6 +1,7 @@
 import { Mode } from '../engine/types';
 
 export const ONBOARDING_DISMISS_KEY = 'ppp:onboarding-dismissed-v1';
+export const LIABILITY_DISCLAIMER_DISMISS_KEY = 'ppp:liability-disclaimer-dismissed-v1';
 
 export const welcomeChecklist = [
   'Start with Deal Next Hand to generate your first spot.',
