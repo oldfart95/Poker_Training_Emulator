@@ -13,7 +13,7 @@ import { BlindDefenseContext, CBetContext, evaluateBlindDefense, evaluateCBet, e
 import { StrategyMode } from './strategy/types';
 import { helpSections, paceHelp, ratingHelp, strategyModeHelp } from './hints/contextualHelp';
 import { generateSpotHint } from './hints/hintGenerator';
-import { ONBOARDING_DISMISS_KEY, trainerInstructions, welcomeChecklist } from './hints/onboardingText';
+import { LIABILITY_DISCLAIMER_DISMISS_KEY, ONBOARDING_DISMISS_KEY, trainerInstructions, welcomeChecklist } from './hints/onboardingText';
 
 const modeLabel: Record<Mode, string> = {
   'full-ring': 'Full Ring Loop',
@@ -89,6 +89,7 @@ export default function App() {
   const [showHint, setShowHint] = useState(false);
   const [showHintMore, setShowHintMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_DISMISS_KEY) !== '1');
+  const [showLiabilityDisclaimer, setShowLiabilityDisclaimer] = useState(() => localStorage.getItem(LIABILITY_DISCLAIMER_DISMISS_KEY) !== '1');
 
   const pace = paceProfiles[paceMode];
 
@@ -200,6 +201,11 @@ export default function App() {
   const dismissOnboarding = () => {
     setShowOnboarding(false);
     localStorage.setItem(ONBOARDING_DISMISS_KEY, '1');
+  };
+
+  const acceptLiabilityDisclaimer = () => {
+    setShowLiabilityDisclaimer(false);
+    localStorage.setItem(LIABILITY_DISCLAIMER_DISMISS_KEY, '1');
   };
 
   const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
@@ -569,6 +575,27 @@ export default function App() {
                 </ul>
               </div>
             ))}
+          </section>
+        </div>
+      )}
+
+      {showLiabilityDisclaimer && (
+        <div className="modal-backdrop">
+          <section className="help-modal disclaimer-modal">
+            <h3>!!!DISCLAIMER!!!</h3>
+            <p>
+              Pocket Pixel Poker is a training simulator for educational use only. It does not provide legal advice or authorization
+              to violate any rules, laws, platform terms, or game integrity policies.
+            </p>
+            <p>
+              <strong>Exploit Mode</strong> means adapting to weak player tendencies (for example over-folding, over-calling, or
+              predictable sizing) to improve strategy study. It is about <strong>pushing weak players strategically</strong>, not
+              cheating.
+            </p>
+            <p>
+              You are solely responsible for how you use this software. By continuing, you agree to use it ethically and lawfully.
+            </p>
+            <button className="accent" onClick={acceptLiabilityDisclaimer}>I understand</button>
           </section>
         </div>
       )}
