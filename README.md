@@ -66,6 +66,12 @@ npm run test
 8. Side-pot solver-level edge-case validation harness.
 
 
+
+## GitHub Pages deployment
+- This repo includes `.github/workflows/deploy.yml` to build and publish `dist/` to GitHub Pages on every push to `main`.
+- In your repository settings, set **Pages → Source** to **GitHub Actions**.
+- The Vite `base` is set to a relative path so the app works both on local dev and project Pages URLs.
+
 ## Troubleshooting
 - If `npm install` fails with a registry 403 in restricted environments, run the project in a network-enabled environment with npm registry access.
 - If `npm run test` reports `vitest: not found`, install dependencies first with `npm install`.

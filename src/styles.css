@@ -445,6 +445,34 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
   .table-surface { min-height: 500px; }
 }
 
+
+@media (max-width: 1024px) and (min-width: 821px) {
+  .app { padding: 14px; }
+  .top-bar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .top-bar > div:first-child { flex: 1 1 100%; }
+  .menu { justify-content: flex-start; }
+  .table-shell { padding: 12px; }
+  .table-surface {
+    min-height: 620px;
+    border-radius: 32% / 26%;
+  }
+  .seat-panel {
+    width: 156px;
+    padding: 7px;
+  }
+  .seat-panel.top-right,
+  .seat-panel.top-left { top: 16%; }
+  .seat-panel.bottom-right,
+  .seat-panel.bottom-left { bottom: 17%; }
+  .board-lane { top: 35%; }
+  .street-banner { top: 23%; }
+  .pot-plaque { top: 12%; }
+  .primary-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 820px) {
   .top-bar { flex-direction: column; align-items: flex-start; }
   .table-surface { min-height: 600px; border-radius: 24px; }
