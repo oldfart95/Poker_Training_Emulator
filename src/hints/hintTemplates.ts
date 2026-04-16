@@ -4,12 +4,12 @@ import { StrategyMode } from '../strategy/types';
 
 export const modeLens: Record<StrategyMode, { quick: string; detail: string }> = {
   blueprint: {
-    quick: 'Balanced baseline favors disciplined frequencies here.',
-    detail: 'Blueprint mode leans toward stable range protection and avoids over-polarizing marginal nodes.'
+    quick: 'Sound fundamentals favor disciplined frequencies here.',
+    detail: 'Sound Fundamentals leans toward stable range protection and avoids over-polarizing marginal nodes.'
   },
   exploit: {
-    quick: 'Exploit baseline leans into opponent tendencies.',
-    detail: 'Exploit mode shifts toward value-heavy lines versus callers and more pressure versus overfolders.'
+    quick: 'Adaptive pressure leans into opponent tendencies.',
+    detail: 'Adaptive Pressure shifts toward value-heavy lines versus callers and more pressure versus overfolders.'
   }
 };
 

@@ -1,8 +1,8 @@
 import { StrategyMode } from '../strategy/types';
 
 export const strategyModeHelp: Record<StrategyMode, string> = {
-  exploit: 'Exploit Mode adapts to leaks: value bet thinner vs callers and bluff less into sticky ranges.',
-  blueprint: 'Blueprint Mode follows balanced baseline play, useful for building fundamentals.'
+  exploit: 'Adaptive Pressure leans into leaks: value bet thinner versus callers and pressure overfolders more directly.',
+  blueprint: 'Sound Fundamentals follows balanced baseline play and keeps your ranges disciplined.'
 };
 
 export const paceHelp = {
@@ -20,27 +20,27 @@ export const ratingHelp: Record<'good' | 'reasonable' | 'questionable' | 'punt',
 
 export const helpSections = [
   {
-    title: 'What this app is',
-    bullets: ['A poker study tool for hand practice.', 'Not a gambling game.', 'Built for repeatable decision training and review.']
+    title: 'What this room is',
+    bullets: ['A single-player poker room for full-hand table practice.', 'Built for repeatable hand review, not gambling.', 'Designed around live decision flow, recap, and opponent study.']
   },
   {
-    title: 'Main modes',
-    bullets: ['Full Ring Loop: play complete hands.', 'Preflop Trainer: opening and facing-open reps.', 'C-Bet Trainer: flop sizing/check decisions.', 'Blind Defense Trainer: defend vs late opens.', 'Replay Last Hand: step-by-step review.']
+    title: 'Main spaces',
+    bullets: ['Table Practice is the main experience: play complete hands against archetype bots.', 'Replay Last Hand lets you review the previous hand street by street.', 'Hints remain optional so the table still feels natural first.']
   },
   {
-    title: 'Strategy modes',
-    bullets: ['Exploit Mode: adjust to villain leaks.', 'Blueprint Mode: balanced baseline defaults.']
+    title: 'Strategy policies',
+    bullets: ['Adaptive Pressure: adjust to visible leaks and punish weak habits.', 'Sound Fundamentals: train around stable baseline decisions and range discipline.']
   },
   {
     title: 'Pace controls',
-    bullets: ['Fast = faster flow.', 'Normal = default timing.', 'Study = slower reveals for readability.']
+    bullets: ['Fast keeps the room moving.', 'Normal is the default balance.', 'Study slows reveals so you can read the table more comfortably.']
   },
   {
     title: 'Study recap',
-    bullets: ['Rating grades the line quality for the hand.', 'Coach notes explain why the line worked or leaked.', 'Use recap trends to target your next drill reps.']
+    bullets: ['Recap grades the line quality of the completed hand.', 'Coach notes explain where discipline held and where pressure leaked value.', 'Session analytics focus on hands played, net bb, and recurring patterns.']
   },
   {
     title: 'Hints',
-    bullets: ['Use Quick Hint for a short nudge before acting.', 'Use Explain More for context: texture, range, and mode logic.']
+    bullets: ['Use Coaching Hint for a short nudge before acting.', 'Open Study Note for texture, range, and policy context only when you want deeper guidance.']
   }
 ];

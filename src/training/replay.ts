@@ -43,8 +43,8 @@ export const formatReplaySteps = (summary: HandSummary | undefined, players: Pla
       street: action.street.toUpperCase(),
       mode: strategyMode,
       interpretation: strategyMode === 'exploit'
-        ? `Exploit Mode: ${tone} line; ${player?.name ?? action.playerName} trends ${profileLean}, so punish likely pool leaks.`
-        : `Blueprint Mode: ${tone} line in this abstraction node; ${player?.name ?? action.playerName} trends ${profileLean} here.`
+        ? `Adaptive Pressure: ${tone} line; ${player?.name ?? action.playerName} trends ${profileLean}, so pressure the likely leak instead of staying purely balanced.`
+        : `Sound Fundamentals: ${tone} line in a baseline node; ${player?.name ?? action.playerName} trends ${profileLean}, so stay structurally sound before adding extra pressure.`
     };
   });
 };
