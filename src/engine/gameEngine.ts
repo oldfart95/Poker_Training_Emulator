@@ -32,6 +32,11 @@ export interface GameState {
   strategyMode: StrategyMode;
 }
 
+export interface BotTurnResult {
+  state: GameState;
+  decision: ReturnType<typeof decideBotAction>;
+}
+
 export const initialStats = (): SessionStats => ({
   hands: 0, vpipOpportunities: 0, vpipCount: 0, pfrOpportunities: 0, pfrCount: 0,
   threeBetOpportunities: 0, threeBetCount: 0, foldToThreeBetOpportunities: 0, foldToThreeBetCount: 0,
@@ -248,33 +253,42 @@ export const applyAction = (state: GameState, seat: number, type: 'fold'|'check'
   return s;
 };
 
+export const takeBotTurn = (state: GameState, strategyMode: StrategyMode = state.strategyMode): BotTurnResult => {
+  const seat = state.currentSeat;
+  const p = state.players[seat];
+  const legal = legalActions(state, seat);
+  const decision = decideBotAction({
+    archetype: p.profile as Archetype,
+    cards: p.holeCards,
+    board: state.board,
+    previousBoard: state.previousBoard,
+    street: state.street,
+    toCall: legal.toCall,
+    pot: state.pot,
+    minRaise: legal.minRaise,
+    stack: p.stack,
+    canCheck: legal.canCheck,
+    position: p.position as Position,
+    playersInHand: alive(state).length,
+    wasPreflopAggressor: state.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
+    facingThreeBet: state.street === 'preflop' && state.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
+    hasBetThisStreet: state.actions.some((a) => a.seat === seat && a.street === state.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')),
+    strategyMode
+  });
+  const nextState = applyAction(state, seat, decision.type, decision.amount);
+  nextState.botDebug = decision.debug;
+  nextState.strategyMode = strategyMode;
+  return {
+    state: nextState,
+    decision
+  };
+};
+
 export const runBotsUntilHero = (state: GameState, strategyMode: StrategyMode = state.strategyMode): GameState => {
   let s = structuredClone(state);
   s.strategyMode = strategyMode;
   while (!s.waitingForHero && !s.summary) {
-    const seat = s.currentSeat;
-    const p = s.players[seat];
-    const legal = legalActions(s, seat);
-    const decision = decideBotAction({
-      archetype: p.profile as Archetype,
-      cards: p.holeCards,
-      board: s.board,
-      previousBoard: s.previousBoard,
-      street: s.street,
-      toCall: legal.toCall,
-      pot: s.pot,
-      minRaise: legal.minRaise,
-      stack: p.stack,
-      canCheck: legal.canCheck,
-      position: p.position as Position,
-      playersInHand: alive(s).length,
-      wasPreflopAggressor: s.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
-      facingThreeBet: s.street === 'preflop' && s.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
-      hasBetThisStreet: s.actions.some((a) => a.seat === seat && a.street === s.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')),
-      strategyMode
-    });
-    s.botDebug = decision.debug;
-    s = applyAction(s, seat, decision.type, decision.amount);
+    s = takeBotTurn(s, strategyMode).state;
   }
   return s;
 };

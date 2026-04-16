@@ -1,8 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { decideBotAction } from './ai/decision';
-import { Archetype } from './ai/tuning/archetypes';
-import { Position } from './ai/tuning/ranges';
-import { applyAction, beginHand, createInitialState, GameState, legalActions, runBotsUntilHero } from './engine/gameEngine';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { beginHand, createInitialState, GameState, legalActions, takeBotTurn, applyAction } from './engine/gameEngine';
 import { Mode, Player } from './engine/types';
 import { helpSections, paceHelp, ratingHelp, strategyModeHelp } from './hints/contextualHelp';
 import { generateSpotHint } from './hints/hintGenerator';
@@ -14,6 +11,17 @@ import { CompactBadge, ReplayControls, TableStatusStrip } from './components/Tab
 import { ReplayView } from './components/ReplayView';
 import { TableStage } from './components/TableStage';
 import { UtilityRail } from './components/UtilityRail';
+import {
+  appendSessionEvent,
+  createSessionExport,
+  createSessionRecord,
+  recordCoachHint,
+  recordStateTransition,
+  syncSessionEnvironment
+} from './session/logger';
+import { buildActionsCsv, buildExportFilename, buildHandsCsv, buildSessionJson, downloadTextFile } from './session/exporters';
+import { buildAppSnapshot, clearAppSnapshot, loadAppSnapshot, saveAppSnapshot } from './session/storage';
+import type { SessionEnvironment, SessionRecord } from './session/types';
 
 const modeLabel: Record<Mode, string> = { 'full-ring': 'Table Practice', replay: 'Replay Last Hand' };
 const seatClass = ['top', 'top-right', 'bottom-right', 'bottom', 'bottom-left', 'top-left'];
@@ -45,7 +53,7 @@ const archetypeDescriptors: Record<string, string> = {
 };
 
 type StatusCardKey = 'environment' | 'coach' | 'review' | null;
-type UtilityPanelKey = 'room' | 'recap' | 'analytics' | null;
+type UtilityPanelKey = 'room' | 'recap' | 'analytics' | 'export' | null;
 
 const formatStatPercent = (count: number, opportunities: number) => (
   opportunities ? ((count / opportunities) * 100).toFixed(1) : '0.0'
@@ -53,19 +61,78 @@ const formatStatPercent = (count: number, opportunities: number) => (
 const formatPlayerRead = (profile?: string) => archetypeDescriptors[profile ?? ''] ?? 'Balanced regular.';
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-export default function App() {
+const getStoredPace = (): PaceMode => {
   const storedPace = localStorage.getItem('ppp:pace');
-  const initialPace: PaceMode = storedPace === 'Fast' || storedPace === 'Study' ? storedPace : 'Normal';
+  return storedPace === 'Fast' || storedPace === 'Study' ? storedPace : 'Normal';
+};
 
-  const [mode, setMode] = useState<Mode>('full-ring');
-  const [strategyMode, setStrategyMode] = useState<StrategyMode>('exploit');
-  const [state, setState] = useState(() => runBotsUntilHero(beginHand(createInitialState()), 'exploit'));
+const createEnvironment = (mode: Mode, roomPolicy: StrategyMode, pace: PaceMode): SessionEnvironment => ({
+  mode,
+  roomPolicy,
+  pace
+});
+
+const bootstrapTable = (environment: SessionEnvironment) => {
+  const base = createInitialState();
+  let nextState = beginHand(base);
+  let sessionRecord = recordStateTransition(createSessionRecord(base, environment), base, nextState);
+
+  while (!nextState.waitingForHero && !nextState.summary) {
+    const previousState = nextState;
+    nextState = takeBotTurn(nextState, environment.roomPolicy).state;
+    sessionRecord = recordStateTransition(sessionRecord, previousState, nextState);
+  }
+
+  sessionRecord = syncSessionEnvironment(sessionRecord, nextState, environment);
+
+  return {
+    state: nextState,
+    sessionRecord
+  };
+};
+
+const buildInitialModel = () => {
+  const restored = loadAppSnapshot();
+  if (restored) {
+    return {
+      mode: restored.mode,
+      strategyMode: restored.strategyMode,
+      paceMode: restored.paceMode,
+      replayStep: restored.replayStep,
+      betAmount: restored.betAmount,
+      state: restored.gameState,
+      sessionRecord: appendSessionEvent(restored.sessionRecord, 'session_restored', 'Recovered from local storage.')
+    };
+  }
+
+  const strategyMode: StrategyMode = 'exploit';
+  const paceMode = getStoredPace();
+  const mode: Mode = 'full-ring';
+  const bootstrapped = bootstrapTable(createEnvironment(mode, strategyMode, paceMode));
+
+  return {
+    mode,
+    strategyMode,
+    paceMode,
+    replayStep: 0,
+    betAmount: 250,
+    state: bootstrapped.state,
+    sessionRecord: bootstrapped.sessionRecord
+  };
+};
+
+export default function App() {
+  const [initialModel] = useState(buildInitialModel);
+  const [mode, setMode] = useState<Mode>(initialModel.mode);
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>(initialModel.strategyMode);
+  const [state, setState] = useState<GameState>(initialModel.state);
+  const [sessionRecord, setSessionRecord] = useState<SessionRecord>(initialModel.sessionRecord);
   const [processing, setProcessing] = useState(false);
-  const [replayStep, setReplayStep] = useState(0);
-  const [betAmount, setBetAmount] = useState(250);
+  const [replayStep, setReplayStep] = useState(initialModel.replayStep);
+  const [betAmount, setBetAmount] = useState(initialModel.betAmount);
   const [showWhy, setShowWhy] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [paceMode, setPaceMode] = useState(initialPace);
+  const [paceMode, setPaceMode] = useState(initialModel.paceMode);
   const [activeSeat, setActiveSeat] = useState<number | null>(null);
   const [thinkingSeat, setThinkingSeat] = useState<number | null>(null);
   const [seatBadges, setSeatBadges] = useState<Record<number, string>>({});
@@ -79,6 +146,14 @@ export default function App() {
   const [expandedStatus, setExpandedStatus] = useState<StatusCardKey>(null);
   const [openPanel, setOpenPanel] = useState<UtilityPanelKey>(null);
   const [showOpponentDrawer, setShowOpponentDrawer] = useState(false);
+  const [utilityFeedback, setUtilityFeedback] = useState<string | null>(null);
+  const [busyUtilityAction, setBusyUtilityAction] = useState<string | null>(null);
+
+  const stateRef = useRef(state);
+  const sessionRef = useRef(sessionRecord);
+  const modeRef = useRef(mode);
+  const strategyModeRef = useRef(strategyMode);
+  const paceModeRef = useRef(paceMode);
 
   const pace = paceProfiles[paceMode];
 
@@ -92,6 +167,7 @@ export default function App() {
     const leaks = Object.entries(stats.mistakes)
       .filter(([, count]) => count > 0)
       .sort((a, b) => b[1] - a[1]);
+    const sessionSummary = createSessionExport(sessionRecord).summary;
 
     return {
       hands: stats.hands,
@@ -104,9 +180,11 @@ export default function App() {
       ),
       biggestWin: stats.biggestWinBb.toFixed(1),
       biggestSetback: stats.biggestPuntBb.toFixed(1),
-      leaks
+      leaks,
+      exportedHands: sessionSummary.hands,
+      netBb: sessionSummary.netBb.toFixed(1)
     };
-  }, [state.stats]);
+  }, [sessionRecord, state.stats]);
 
   const liveVillains = useMemo(
     () => state.players.filter((player) => !player.isHero).map((player) => ({
@@ -119,8 +197,47 @@ export default function App() {
   );
 
   useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    sessionRef.current = sessionRecord;
+  }, [sessionRecord]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    strategyModeRef.current = strategyMode;
+  }, [strategyMode]);
+
+  useEffect(() => {
+    paceModeRef.current = paceMode;
+  }, [paceMode]);
+
+  useEffect(() => {
     localStorage.setItem('ppp:pace', paceMode);
   }, [paceMode]);
+
+  useEffect(() => {
+    const environment = createEnvironment(mode, strategyMode, paceMode);
+    const nextSession = syncSessionEnvironment(sessionRef.current, stateRef.current, environment);
+    sessionRef.current = nextSession;
+    setSessionRecord(nextSession);
+  }, [mode, strategyMode, paceMode]);
+
+  useEffect(() => {
+    saveAppSnapshot(buildAppSnapshot({
+      mode,
+      strategyMode,
+      paceMode,
+      replayStep,
+      betAmount,
+      gameState: state,
+      sessionRecord
+    }));
+  }, [betAmount, mode, paceMode, replayStep, sessionRecord, state, strategyMode]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -133,50 +250,70 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, replayActions.length]);
 
+  const replaceStateAndSession = (nextState: GameState, nextSession: SessionRecord) => {
+    stateRef.current = nextState;
+    sessionRef.current = nextSession;
+    setState(nextState);
+    setSessionRecord(nextSession);
+  };
+
+  const updateSessionOnly = (transform: (current: SessionRecord) => SessionRecord) => {
+    const nextSession = syncSessionEnvironment(
+      transform(sessionRef.current),
+      stateRef.current,
+      createEnvironment(modeRef.current, strategyModeRef.current, paceModeRef.current)
+    );
+    sessionRef.current = nextSession;
+    setSessionRecord(nextSession);
+    return nextSession;
+  };
+
+  const applyLoggedTransition = (previousState: GameState, nextState: GameState) => {
+    const nextSession = syncSessionEnvironment(
+      recordStateTransition(sessionRef.current, previousState, nextState),
+      nextState,
+      createEnvironment(modeRef.current, strategyModeRef.current, paceModeRef.current)
+    );
+    replaceStateAndSession(nextState, nextSession);
+    return nextState;
+  };
+
+  const runUtilityAction = async (key: string, task: () => Promise<void> | void) => {
+    if (busyUtilityAction) return;
+
+    setBusyUtilityAction(key);
+    setUtilityFeedback(null);
+    try {
+      await task();
+    } finally {
+      window.setTimeout(() => setBusyUtilityAction((current) => current === key ? null : current), 500);
+    }
+  };
+
+  const createExportSnapshot = (eventType: 'exported' | 'copied_json', note: string) => {
+    const nextSession = updateSessionOnly((current) => appendSessionEvent(current, eventType, note));
+    return createSessionExport(nextSession);
+  };
+
   const runPresentationQueue = async (start: GameState) => {
     let current = structuredClone(start);
     setProcessing(true);
 
     while (!current.waitingForHero && !current.summary) {
       const seat = current.currentSeat;
-      const player = current.players[seat];
-      const legal = legalActions(current, seat);
       const previousStreet = current.street;
 
       setThinkingSeat(seat);
       await wait(jitterInRange(pace.thinkMs));
 
-      const decision = decideBotAction({
-        archetype: player.profile as Archetype,
-        cards: player.holeCards,
-        board: current.board,
-        previousBoard: current.previousBoard,
-        street: current.street,
-        toCall: legal.toCall,
-        pot: current.pot,
-        minRaise: legal.minRaise,
-        stack: player.stack,
-        canCheck: legal.canCheck,
-        position: player.position as Position,
-        playersInHand: current.players.filter((seatPlayer) => !seatPlayer.folded).length,
-        wasPreflopAggressor: current.actions.some(
-          (action) => action.street === 'preflop' && action.seat === seat && (action.type === 'raise' || action.type === 'all-in')
-        ),
-        facingThreeBet:
-          current.street === 'preflop' &&
-          current.actions.filter((action) => (action.type === 'raise' || action.type === 'all-in') && action.street === 'preflop').length >= 2,
-        hasBetThisStreet: current.actions.some(
-          (action) => action.seat === seat && action.street === current.street && (action.type === 'raise' || action.type === 'all-in' || action.type === 'bet')
-        ),
-        strategyMode
-      });
-
+      const previousState = current;
+      const botTurn = takeBotTurn(current, strategyModeRef.current);
+      current = botTurn.state;
       setThinkingSeat(null);
-      current = applyAction(current, seat, decision.type, decision.amount);
-      setState(current);
-      setSeatBadges((previous) => ({ ...previous, [seat]: decision.type.toUpperCase() }));
+      applyLoggedTransition(previousState, current);
+      setSeatBadges((previous) => ({ ...previous, [seat]: botTurn.decision.type.toUpperCase() }));
 
-      if (decision.amount > 0) {
+      if (botTurn.decision.amount > 0) {
         setPotPulse(true);
         window.setTimeout(() => setPotPulse(false), jitterInRange(pace.chipMs));
       }
@@ -284,8 +421,9 @@ export default function App() {
   const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
     if (processing) return;
 
-    const next = applyAction(state, 0, type, amount);
-    setState(next);
+    const previousState = stateRef.current;
+    const next = applyAction(previousState, 0, type, amount);
+    applyLoggedTransition(previousState, next);
     setSeatBadges((previous) => ({ ...previous, 0: type.toUpperCase() }));
     setReplayStep(0);
     setShowHint(false);
@@ -301,14 +439,16 @@ export default function App() {
   const dealNextHand = async () => {
     if (processing) return;
 
-    const next = beginHand(state);
-    setState(next);
+    const previousState = stateRef.current;
+    const next = beginHand(previousState);
+    applyLoggedTransition(previousState, next);
     setSeatBadges({});
     setReplayStep(0);
     setShowHint(false);
     setShowHintMore(false);
     setShowWhy(false);
     setActiveSeat(null);
+    setUtilityFeedback(null);
 
     await wait(jitterInRange(pace.dealMs));
     await wait(jitterInRange(pace.dealMs));
@@ -317,6 +457,74 @@ export default function App() {
       await runPresentationQueue(next);
     }
   };
+
+  const handleHintToggle = () => {
+    if (!showHint) {
+      updateSessionOnly((current) => recordCoachHint(current, stateRef.current, {
+        quick: spotHint.quick,
+        detail: spotHint.explainMore
+      }));
+    }
+    setShowHint((value) => !value);
+    setShowHintMore(false);
+  };
+
+  const exportJson = () => runUtilityAction('json', () => {
+    const sessionExport = createExportSnapshot('exported', 'JSON export downloaded.');
+    const content = buildSessionJson(sessionExport);
+    downloadTextFile(content, buildExportFilename(sessionExport.exportedAt, 'json'), 'application/json;charset=utf-8');
+    setUtilityFeedback('Session JSON downloaded.');
+  });
+
+  const exportHandsCsv = () => runUtilityAction('hands-csv', () => {
+    const sessionExport = createExportSnapshot('exported', 'Hand summary CSV downloaded.');
+    downloadTextFile(buildHandsCsv(sessionExport), buildExportFilename(sessionExport.exportedAt, 'hands.csv'), 'text/csv;charset=utf-8');
+    setUtilityFeedback('Hand summary CSV downloaded.');
+  });
+
+  const exportActionsCsv = () => runUtilityAction('actions-csv', () => {
+    const sessionExport = createExportSnapshot('exported', 'Action log CSV downloaded.');
+    downloadTextFile(buildActionsCsv(sessionExport), buildExportFilename(sessionExport.exportedAt, 'actions.csv'), 'text/csv;charset=utf-8');
+    setUtilityFeedback('Action log CSV downloaded.');
+  });
+
+  const copySessionJson = () => runUtilityAction('copy-json', async () => {
+    const sessionExport = createExportSnapshot('copied_json', 'Session JSON copied to clipboard.');
+    const content = buildSessionJson(sessionExport);
+    try {
+      await navigator.clipboard.writeText(content);
+      setUtilityFeedback('Session JSON copied.');
+    } catch {
+      setUtilityFeedback('Clipboard blocked. Try the JSON download instead.');
+    }
+  });
+
+  const resetSession = () => runUtilityAction('reset-session', () => {
+    if (!window.confirm('Reset the current session log and start a fresh table?')) {
+      return;
+    }
+
+    const nextMode: Mode = 'full-ring';
+    const nextStrategyMode = strategyModeRef.current;
+    const nextPaceMode = paceModeRef.current;
+    const fresh = bootstrapTable(createEnvironment(nextMode, nextStrategyMode, nextPaceMode));
+    clearAppSnapshot();
+    replaceStateAndSession(
+      fresh.state,
+      appendSessionEvent(fresh.sessionRecord, 'reset', 'Previous session cleared and replaced.')
+    );
+    setMode(nextMode);
+    setReplayStep(0);
+    setBetAmount(250);
+    setShowHint(false);
+    setShowHintMore(false);
+    setShowWhy(false);
+    setOpenPanel(null);
+    setSeatBadges({});
+    setActiveSeat(null);
+    setThinkingSeat(null);
+    setUtilityFeedback('Session data reset. Fresh table ready.');
+  });
 
   return (
     <div className="app premium-shell">
@@ -376,7 +584,7 @@ export default function App() {
             showHint={showHint}
             showHintMore={showHintMore}
             spotHint={spotHint}
-            setShowHint={setShowHint}
+            setShowHint={handleHintToggle}
             setShowHintMore={setShowHintMore}
             setMode={setMode}
             showOnboarding={showOnboarding}
@@ -414,6 +622,14 @@ export default function App() {
             showDebug={showDebug}
             setShowDebug={setShowDebug}
             ratingHelp={ratingHelp}
+            sessionRecord={sessionRecord}
+            utilityFeedback={utilityFeedback}
+            busyUtilityAction={busyUtilityAction}
+            onExportJson={exportJson}
+            onExportHandsCsv={exportHandsCsv}
+            onExportActionsCsv={exportActionsCsv}
+            onCopyJson={copySessionJson}
+            onResetSession={resetSession}
           />
         </div>
       )}

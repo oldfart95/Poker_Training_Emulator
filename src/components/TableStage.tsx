@@ -76,7 +76,7 @@ export function TableStage({
   showHint: boolean;
   showHintMore: boolean;
   spotHint: { quick: string; explainMore: string };
-  setShowHint: (updater: (value: boolean) => boolean) => void;
+  setShowHint: () => void;
   setShowHintMore: (updater: (value: boolean) => boolean) => void;
   setMode: (mode: 'full-ring' | 'replay') => void;
   showOnboarding: boolean;
@@ -114,10 +114,7 @@ export function TableStage({
             quick={spotHint.quick}
             detail={spotHint.explainMore}
             expanded={showHintMore}
-            onToggle={() => {
-              setShowHint((value) => !value);
-              setShowHintMore(() => false);
-            }}
+            onToggle={setShowHint}
             onToggleExpanded={() => setShowHintMore((value) => !value)}
           />
           {state.summary && (

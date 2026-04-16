@@ -177,6 +177,9 @@ button.accent { background: linear-gradient(180deg, rgba(53, 115, 96, 0.42), rgb
 button.gold { background: linear-gradient(180deg, rgba(187, 150, 86, 0.38), rgba(48, 34, 14, 0.98)); }
 button.danger { background: linear-gradient(180deg, rgba(139, 82, 89, 0.42), rgba(35, 18, 22, 0.98)); }
 button.soft { background: linear-gradient(180deg, rgba(103, 120, 142, 0.32), rgba(23, 28, 35, 0.98)); }
+button.ghost-danger {
+  background: linear-gradient(180deg, rgba(139, 82, 89, 0.18), rgba(21, 14, 17, 0.98));
+}
 
 .quiet-button {
   padding: 7px 12px;
@@ -772,6 +775,34 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0));
 }
 
+.export-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.export-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.export-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-meta span,
+.export-feedback {
+  display: inline-flex;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-soft-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+}
+
 .utility-panel-body[aria-hidden='true'] {
   pointer-events: none;
 }
@@ -955,6 +986,10 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
   .table-surface {
     min-height: 760px;
     border-radius: 30px;
+  }
+
+  .export-action-grid {
+    grid-template-columns: 1fr;
   }
 
   .seat-panel {

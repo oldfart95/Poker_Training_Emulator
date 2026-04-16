@@ -1,8 +1,9 @@
 import type { GameState } from '../engine/gameEngine';
 import type { StrategyMode } from '../strategy/types';
+import type { SessionRecord } from '../session/types';
 import { ExpandableSidePanel, HandRecapPanel } from './TableLayout';
 
-type UtilityPanelKey = 'room' | 'recap' | 'analytics' | null;
+type UtilityPanelKey = 'room' | 'recap' | 'analytics' | 'export' | null;
 
 export function UtilityRail({
   strategyMode,
@@ -20,7 +21,15 @@ export function UtilityRail({
   sessionHighlights,
   showDebug,
   setShowDebug,
-  ratingHelp
+  ratingHelp,
+  sessionRecord,
+  utilityFeedback,
+  busyUtilityAction,
+  onExportJson,
+  onExportHandsCsv,
+  onExportActionsCsv,
+  onCopyJson,
+  onResetSession
 }: {
   strategyMode: StrategyMode;
   strategyModeLabel: Record<StrategyMode, string>;
@@ -43,10 +52,20 @@ export function UtilityRail({
     biggestWin: string;
     biggestSetback: string;
     leaks: Array<[string, number]>;
+    exportedHands: number;
+    netBb: string;
   };
   showDebug: boolean;
   setShowDebug: (updater: (value: boolean) => boolean) => void;
   ratingHelp: Record<string, string>;
+  sessionRecord: SessionRecord;
+  utilityFeedback: string | null;
+  busyUtilityAction: string | null;
+  onExportJson: () => void;
+  onExportHandsCsv: () => void;
+  onExportActionsCsv: () => void;
+  onCopyJson: () => void;
+  onResetSession: () => void;
 }) {
   return (
     <aside className="utility-rail">
@@ -175,6 +194,42 @@ export function UtilityRail({
             <div>Reason: {state.botDebug.reason}</div>
           </div>
         )}
+      </ExpandableSidePanel>
+
+      <ExpandableSidePanel
+        kicker="Session Export"
+        title="Review-ready files"
+        summary={`${sessionHighlights.exportedHands} logged hands | ${sessionHighlights.netBb} bb`}
+        open={openPanel === 'export'}
+        onToggle={() => toggleUtilityPanel('export')}
+      >
+        <div className="export-panel">
+          <p className="compact-copy">
+            Full hand history stays tucked away until you want to export it for spreadsheet review or a separate analyzer.
+          </p>
+          <div className="export-action-grid">
+            <button type="button" className="neutral" onClick={onExportJson} disabled={busyUtilityAction !== null}>
+              {busyUtilityAction === 'json' ? 'Exporting...' : 'Export JSON'}
+            </button>
+            <button type="button" className="neutral" onClick={onExportHandsCsv} disabled={busyUtilityAction !== null}>
+              {busyUtilityAction === 'hands-csv' ? 'Exporting...' : 'Export Hands CSV'}
+            </button>
+            <button type="button" className="neutral" onClick={onExportActionsCsv} disabled={busyUtilityAction !== null}>
+              {busyUtilityAction === 'actions-csv' ? 'Exporting...' : 'Export Actions CSV'}
+            </button>
+            <button type="button" className="quiet-button" onClick={onCopyJson} disabled={busyUtilityAction !== null}>
+              {busyUtilityAction === 'copy-json' ? 'Copying...' : 'Copy JSON'}
+            </button>
+            <button type="button" className="danger ghost-danger" onClick={onResetSession} disabled={busyUtilityAction !== null}>
+              {busyUtilityAction === 'reset-session' ? 'Resetting...' : 'Reset Session'}
+            </button>
+          </div>
+          <div className="export-meta">
+            <span>Session ID: {sessionRecord.session.id.slice(0, 8)}</span>
+            <span>Status: {sessionRecord.session.status}</span>
+          </div>
+          {utilityFeedback && <p className="export-feedback">{utilityFeedback}</p>}
+        </div>
       </ExpandableSidePanel>
     </aside>
   );
