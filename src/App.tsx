@@ -64,6 +64,7 @@ const formatStatPercent = (count: number, opportunities: number) => (
 );
 
 const formatPlayerRead = (profile?: string) => archetypeDescriptors[profile ?? ''] ?? 'Balanced regular';
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export default function App() {
   const storedPace = localStorage.getItem('ppp:pace');
@@ -210,9 +211,28 @@ export default function App() {
   const legal = legalActions(state, 0);
   const canRaise = legal.max >= legal.minRaise && !state.summary;
   const lastAction = state.actions[state.actions.length - 1];
+  const hero = state.players[0];
+  const selectedBet = clamp(betAmount, legal.minRaise, Math.max(legal.minRaise, legal.max));
+  const heroPendingAction = state.waitingForHero && !state.summary;
+  const tableStateLine = state.summary
+    ? `Hand complete. ${state.summary.heroPosition} closed the line at ${state.summary.resultBb.toFixed(1)} bb.`
+    : lastAction
+      ? `${streetMeta[state.street].label}: ${lastAction.playerName} ${lastAction.type}${lastAction.amount ? ` ${lastAction.amount}` : ''}. Pot ${state.pot}.`
+      : `${streetMeta[state.street].label}: fresh action forming. Pot ${state.pot}.`;
+  const heroStatusLine = state.summary
+    ? 'Review the recap or deal again when you are ready.'
+    : heroPendingAction
+      ? `${hero.position} to act. ${legal.canCheck ? 'You can check behind.' : `Price to continue: ${legal.toCall}.`} ${canRaise ? `Min raise: ${legal.minRaise}.` : 'Raise closed.'}`
+      : 'Table action is unfolding. Watch who applies pressure before the next decision comes back around.';
+  const sizingPresets = [
+    { label: 'Min', amount: legal.minRaise, disabled: !canRaise },
+    { label: '33%', amount: Math.round(Math.max(state.pot, state.bb) * 0.33), disabled: !canRaise },
+    { label: '66%', amount: Math.round(Math.max(state.pot, state.bb) * 0.66), disabled: !canRaise },
+    { label: 'Pot', amount: Math.round(Math.max(state.pot, state.bb)), disabled: !canRaise },
+    { label: 'All-in', amount: legal.max, disabled: !!state.summary || processing }
+  ];
 
   const spotHint = useMemo(() => {
-    const hero = state.players[0];
     const liveVillain = state.players.find((p) => !p.isHero && !p.folded);
     const heroAggressor = state.actions.some((a) => a.seat === 0 && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'));
     return generateSpotHint({
@@ -330,6 +350,10 @@ export default function App() {
               <div className={`street-banner ${state.street}`}>
                 <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
               </div>
+              <div className="table-state-ribbon">
+                <strong>{heroPendingAction ? 'Hero decision live' : state.summary ? 'Hand logged' : 'Action in motion'}</strong>
+                <span>{tableStateLine}</span>
+              </div>
               <div className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`} key={`${state.handId}-${state.board.length}-${streetAnimTick}`}>
                 {state.board.length === 0 && <span className="street-hint">Waiting for the next street...</span>}
                 {state.board.map((card, index) => (
@@ -340,7 +364,7 @@ export default function App() {
               <div className="seats-ring">
                 {state.players.map((player, index) => (
                   <article
-                    className={`seat-panel ${seatClass[index]} ${player.isHero ? 'hero' : ''} ${player.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''}`}
+                    className={`seat-panel ${seatClass[index]} ${player.isHero ? 'hero' : ''} ${player.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''} ${thinkingSeat === index ? 'is-thinking' : ''} ${seatBadges[index] && !state.summary ? 'has-acted' : ''}`}
                     key={player.id}
                   >
                     <div className="seat-head">
@@ -410,13 +434,31 @@ export default function App() {
                 </div>
               </div>
 
-              <p className="microcopy">
-                {state.summary
-                  ? 'Hand complete. Review the recap, then deal the next hand when you are ready.'
-                  : state.waitingForHero
-                    ? `Your action from ${state.players[0].position}. Stay grounded in stack depth, position, and the room profile across from you.`
-                    : 'Table action is unfolding. Watch how each archetype enters the pot and where pressure starts to build.'}
-              </p>
+              <div className={`action-spotlight ${heroPendingAction ? 'live' : ''}`}>
+                <div>
+                  <p className="panel-kicker">Current Decision</p>
+                  <h3>{heroPendingAction ? `${hero.position} in the box` : state.summary ? 'Hand archived for study' : 'Observe the room'}</h3>
+                  <p className="microcopy">{heroStatusLine}</p>
+                </div>
+                <div className="action-intel">
+                  <div className="intel-pill">
+                    <span>Pot</span>
+                    <strong>{state.pot}</strong>
+                  </div>
+                  <div className="intel-pill">
+                    <span>{legal.canCheck ? 'Check' : 'To call'}</span>
+                    <strong>{legal.canCheck ? 'Free' : legal.toCall}</strong>
+                  </div>
+                  <div className="intel-pill">
+                    <span>Min raise</span>
+                    <strong>{canRaise ? legal.minRaise : '-'}</strong>
+                  </div>
+                  <div className="intel-pill">
+                    <span>Hero stack</span>
+                    <strong>{hero.stack}</strong>
+                  </div>
+                </div>
+              </div>
 
               <div className="primary-actions">
                 <button className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
@@ -429,8 +471,8 @@ export default function App() {
                 >
                   {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
                 </button>
-                <button className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', betAmount)}>
-                  Bet / Raise
+                <button className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
+                  Raise To {selectedBet}
                 </button>
                 <button className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
                   All-in
@@ -449,30 +491,35 @@ export default function App() {
 
               <div className="sizing-controls">
                 <div className="slider-row">
-                  <label>Selected size: {Math.min(betAmount, Math.max(legal.minRaise, legal.max))}</label>
+                  <label>Raise sizing: {selectedBet}</label>
                   <input
                     type="range"
                     min={legal.minRaise}
                     max={Math.max(legal.minRaise, legal.max)}
-                    value={Math.min(betAmount, Math.max(legal.minRaise, legal.max))}
+                    value={selectedBet}
                     onChange={(event) => setBetAmount(Number(event.target.value))}
+                    disabled={!canRaise || processing}
                   />
                 </div>
                 <div className="presets">
-                  {[0.25, 0.33, 0.5, 0.75, 1].map((size) => (
-                    <button key={size} onClick={() => setBetAmount(Math.round(state.pot * size))} title="Set your sizing as a percentage of the current pot.">
-                      {Math.round(size * 100)}%
+                  {sizingPresets.map((preset) => (
+                    <button
+                      key={preset.label}
+                      disabled={preset.disabled}
+                      onClick={() => setBetAmount(clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max)))}
+                      title="Set a faster betting preset for the current spot."
+                    >
+                      {preset.label}
+                      <strong>{preset.label === 'All-in' ? legal.max : clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max))}</strong>
                     </button>
                   ))}
-                  <button onClick={() => setBetAmount(Math.round(2.5 * state.bb))}>2.5x</button>
-                  <button onClick={() => setBetAmount(Math.round(3 * state.bb))}>3x</button>
                 </div>
               </div>
 
               <button className="deal-next" onClick={dealNextHand} disabled={processing}>
                 Deal Next Hand
               </button>
-              {!state.summary && <p className="microcopy">Need a fresh spot? A new hand keeps the room moving without dropping your session analytics.</p>}
+              {!state.summary && <p className="microcopy action-footer">Need a fresh spot? A new hand keeps the room moving without dropping your session analytics.</p>}
             </div>
           </section>
 
@@ -560,26 +607,32 @@ export default function App() {
                 <div className="stat-card">
                   <span>Hands</span>
                   <strong>{sessionHighlights.hands}</strong>
+                  <p>Volume logged this session.</p>
                 </div>
                 <div className="stat-card">
                   <span>Net</span>
                   <strong>{state.stats.winLossBb.toFixed(1)} bb</strong>
+                  <p>Overall result across completed hands.</p>
                 </div>
                 <div className="stat-card">
                   <span>VPIP</span>
                   <strong>{sessionHighlights.vpip}%</strong>
+                  <p>How often you entered the pot.</p>
                 </div>
                 <div className="stat-card">
                   <span>PFR</span>
                   <strong>{sessionHighlights.pfr}%</strong>
+                  <p>Preflop pressure frequency.</p>
                 </div>
                 <div className="stat-card">
                   <span>WTSD</span>
                   <strong>{sessionHighlights.wtsd}%</strong>
+                  <p>How often you reached showdown.</p>
                 </div>
                 <div className="stat-card">
                   <span>Aggression</span>
                   <strong>{sessionHighlights.aggression}%</strong>
+                  <p>Raises and c-bets versus passive lines.</p>
                 </div>
               </div>
 
@@ -587,10 +640,12 @@ export default function App() {
                 <div className="trend-card">
                   <span>Best hand</span>
                   <strong>{sessionHighlights.biggestWin} bb</strong>
+                  <p>Largest positive swing.</p>
                 </div>
                 <div className="trend-card">
                   <span>Largest setback</span>
                   <strong>{sessionHighlights.biggestSetback} bb</strong>
+                  <p>Worst single-hand loss.</p>
                 </div>
               </div>
 
@@ -647,10 +702,24 @@ export default function App() {
           ) : (
             <>
               <div className="replay-stage">
-                <div className="replay-overview">
-                  <span>Step {replayStep + 1} of {replayActions.length}</span>
-                  <strong>{currentReplay?.street}</strong>
-                  <p>{currentReplay?.who} {currentReplay?.did}</p>
+                <div className="replay-stage-top">
+                  <div className="replay-overview">
+                    <span>Step {replayStep + 1} of {replayActions.length}</span>
+                    <strong>{currentReplay?.street}</strong>
+                    <p>{currentReplay?.who} {currentReplay?.did}</p>
+                  </div>
+                  <div className="replay-progress">
+                    {replayActions.map((step, index) => (
+                      <button
+                        key={`${step.street}-marker-${index}`}
+                        className={`replay-progress-stop ${index === replayStep ? 'active' : ''}`}
+                        onClick={() => setReplayStep(index)}
+                        title={`${step.street} - ${step.who} ${step.did}`}
+                      >
+                        <span>{index + 1}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {currentReplay && (
                   <div className="replay-focus">
@@ -658,8 +727,12 @@ export default function App() {
                       <span className="replay-label">Pot after action</span>
                       <strong>{currentReplay.potAfter}</strong>
                     </div>
+                    <div className="replay-focus-card">
+                      <span className="replay-label">Action taken</span>
+                      <strong>{currentReplay.did}</strong>
+                    </div>
                     <div className="replay-focus-card wide">
-                      <span className="replay-label">Interpretation</span>
+                      <span className="replay-label">Key takeaway</span>
                       <p>{currentReplay.interpretation}</p>
                     </div>
                   </div>
@@ -676,6 +749,7 @@ export default function App() {
                     <span>{step.street}</span>
                     <strong>{step.who}</strong>
                     <em>{step.did}</em>
+                    <small>Pot {step.potAfter}</small>
                   </button>
                 ))}
               </div>
