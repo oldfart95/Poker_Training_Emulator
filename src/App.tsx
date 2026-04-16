@@ -2,22 +2,31 @@ import { useEffect, useMemo, useState } from 'react';
 import { decideBotAction } from './ai/decision';
 import { Archetype } from './ai/tuning/archetypes';
 import { Position } from './ai/tuning/ranges';
-import { applyAction, beginHand, createInitialState, legalActions, runBotsUntilHero } from './engine/gameEngine';
+import { beginHand, applyAction, createInitialState, legalActions, runBotsUntilHero, GameState } from './engine/gameEngine';
 import { formatCard } from './engine/deck';
-import { GameState } from './engine/gameEngine';
-import { Mode } from './engine/types';
-import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/pacing';
-import { formatReplaySteps } from './training/replay';
-import { StrategyMode } from './strategy/types';
+import { Mode, Player } from './engine/types';
 import { helpSections, paceHelp, ratingHelp, strategyModeHelp } from './hints/contextualHelp';
 import { generateSpotHint } from './hints/hintGenerator';
 import { LIABILITY_DISCLAIMER_DISMISS_KEY, ONBOARDING_DISMISS_KEY, replayGuide, welcomeChecklist } from './hints/onboardingText';
+import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/pacing';
+import { StrategyMode } from './strategy/types';
+import { formatReplaySteps } from './training/replay';
+import {
+  ChipStack,
+  CompactBadge,
+  ExpandableSidePanel,
+  HandRecapPanel,
+  HintPopover,
+  PaceControls,
+  PlayerSeatCard,
+  PokerCard,
+  ReplayControls,
+  ReplayTimeline,
+  StartSessionCard,
+  TableStatusStrip
+} from './components/TableLayout';
 
-const modeLabel: Record<Mode, string> = {
-  'full-ring': 'Table Practice',
-  replay: 'Replay Last Hand'
-};
-
+const modeLabel: Record<Mode, string> = { 'full-ring': 'Table Practice', replay: 'Replay Last Hand' };
 const seatClass = ['top', 'top-right', 'bottom-right', 'bottom', 'bottom-left', 'top-left'];
 const streetMeta = {
   preflop: { icon: 'P', label: 'Preflop' },
@@ -31,44 +40,34 @@ const strategyModeLabel: Record<StrategyMode, string> = {
   blueprint: 'Sound Fundamentals'
 };
 const modeTooltips: Record<Mode, string> = {
-  'full-ring': 'Play full hands at the practice table with hints, recap, and session analytics.',
-  replay: 'Review the most recent hand street by street with action reads.'
+  'full-ring': 'Live table reps with optional hints and review.',
+  replay: 'Review the latest hand street by street.'
 };
 const strategyModeCaption: Record<StrategyMode, string> = {
-  exploit: 'Leans into player leaks with practical pressure and thinner value where the room gives it up.',
-  blueprint: 'Anchors decisions to balanced baseline habits and disciplined range construction.'
+  exploit: 'Punish leaks when the room gives you one.',
+  blueprint: 'Stay balanced and structurally sound first.'
 };
 const archetypeDescriptors: Record<string, string> = {
-  Nit: 'Patient, tight, value-heavy',
-  TAG: 'Disciplined reg, steady pressure',
-  LAG: 'Active opener, wide pressure',
-  'Calling Station': 'Sticky caller, under-folds',
-  Maniac: 'Chaotic pressure, over-bluffs'
+  Nit: 'Patient and value-heavy.',
+  TAG: 'Disciplined pressure.',
+  LAG: 'Wide opener with tempo.',
+  'Calling Station': 'Sticky calls and under-folds.',
+  Maniac: 'Chaotic pressure and extra bluffs.'
 };
 
-const ChipStack = ({ amount }: { amount: number }) => <span className="chip-stack">{amount}</span>;
-
-const PokerCard = ({ value, hidden = false }: { value?: string; hidden?: boolean }) => {
-  const rank = value ? value.slice(0, -1) : '';
-  const suit = value ? value.slice(-1) : '';
-  const suitTone = suit === '\u2665' || suit === '\u2666' ? 'red' : 'black';
-  return (
-    <span className={`poker-card ${hidden ? 'back' : ''} ${suitTone}`}>
-      {hidden ? <span>{'\u2666'}</span> : <><strong>{rank}</strong><em>{suit}</em></>}
-    </span>
-  );
-};
+type StatusCardKey = 'environment' | 'coach' | 'review' | null;
+type UtilityPanelKey = 'room' | 'recap' | 'analytics' | null;
 
 const formatStatPercent = (count: number, opportunities: number) => (
   opportunities ? ((count / opportunities) * 100).toFixed(1) : '0.0'
 );
-
-const formatPlayerRead = (profile?: string) => archetypeDescriptors[profile ?? ''] ?? 'Balanced regular';
+const formatPlayerRead = (profile?: string) => archetypeDescriptors[profile ?? ''] ?? 'Balanced regular.';
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export default function App() {
   const storedPace = localStorage.getItem('ppp:pace');
   const initialPace: PaceMode = storedPace === 'Fast' || storedPace === 'Study' ? storedPace : 'Normal';
+
   const [mode, setMode] = useState<Mode>('full-ring');
   const [strategyMode, setStrategyMode] = useState<StrategyMode>('exploit');
   const [state, setState] = useState(() => runBotsUntilHero(beginHand(createInitialState()), 'exploit'));
@@ -88,6 +87,9 @@ export default function App() {
   const [showHintMore, setShowHintMore] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_DISMISS_KEY) !== '1');
   const [showLiabilityDisclaimer, setShowLiabilityDisclaimer] = useState(() => localStorage.getItem(LIABILITY_DISCLAIMER_DISMISS_KEY) !== '1');
+  const [expandedStatus, setExpandedStatus] = useState<StatusCardKey>(null);
+  const [openPanel, setOpenPanel] = useState<UtilityPanelKey>(null);
+  const [showOpponentDrawer, setShowOpponentDrawer] = useState(false);
 
   const pace = paceProfiles[paceMode];
 
@@ -134,8 +136,8 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (mode !== 'replay') return;
-      if (event.key === 'ArrowLeft') setReplayStep((s) => Math.max(0, s - 1));
-      if (event.key === 'ArrowRight') setReplayStep((s) => Math.min(replayActions.length - 1, s + 1));
+      if (event.key === 'ArrowLeft') setReplayStep((step) => Math.max(0, step - 1));
+      if (event.key === 'ArrowRight') setReplayStep((step) => Math.min(replayActions.length - 1, step + 1));
     };
 
     window.addEventListener('keydown', onKey);
@@ -152,7 +154,6 @@ export default function App() {
       const legal = legalActions(current, seat);
       const previousStreet = current.street;
 
-      setActiveSeat(seat);
       setThinkingSeat(seat);
       await wait(jitterInRange(pace.thinkMs));
 
@@ -168,15 +169,15 @@ export default function App() {
         stack: player.stack,
         canCheck: legal.canCheck,
         position: player.position as Position,
-        playersInHand: current.players.filter((p) => !p.folded).length,
+        playersInHand: current.players.filter((seatPlayer) => !seatPlayer.folded).length,
         wasPreflopAggressor: current.actions.some(
-          (a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')
+          (action) => action.street === 'preflop' && action.seat === seat && (action.type === 'raise' || action.type === 'all-in')
         ),
         facingThreeBet:
           current.street === 'preflop' &&
-          current.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
+          current.actions.filter((action) => (action.type === 'raise' || action.type === 'all-in') && action.street === 'preflop').length >= 2,
         hasBetThisStreet: current.actions.some(
-          (a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')
+          (action) => action.seat === seat && action.street === current.street && (action.type === 'raise' || action.type === 'all-in' || action.type === 'bet')
         ),
         strategyMode
       });
@@ -184,7 +185,7 @@ export default function App() {
       setThinkingSeat(null);
       current = applyAction(current, seat, decision.type, decision.amount);
       setState(current);
-      setSeatBadges((prev) => ({ ...prev, [seat]: decision.type.toUpperCase() }));
+      setSeatBadges((previous) => ({ ...previous, [seat]: decision.type.toUpperCase() }));
 
       if (decision.amount > 0) {
         setPotPulse(true);
@@ -192,7 +193,7 @@ export default function App() {
       }
 
       if (current.street !== previousStreet) {
-        setStreetAnimTick((v) => v + 1);
+        setStreetAnimTick((value) => value + 1);
         await wait(jitterInRange(pace.streetMs));
       } else {
         await wait(jitterInRange(pace.postActionMs));
@@ -201,9 +202,9 @@ export default function App() {
 
     if (current.summary) {
       await wait(jitterInRange(pace.showdownMs));
+      setOpenPanel('recap');
     }
 
-    setActiveSeat(current.summary ? null : current.currentSeat);
     setThinkingSeat(null);
     setProcessing(false);
   };
@@ -214,16 +215,21 @@ export default function App() {
   const hero = state.players[0];
   const selectedBet = clamp(betAmount, legal.minRaise, Math.max(legal.minRaise, legal.max));
   const heroPendingAction = state.waitingForHero && !state.summary;
+  const currentReplay = replayActions[replayStep];
+  const activeSeatPlayer: Player | undefined = activeSeat === null ? undefined : state.players[activeSeat];
+
   const tableStateLine = state.summary
-    ? `Hand complete. ${state.summary.heroPosition} closed the line at ${state.summary.resultBb.toFixed(1)} bb.`
+    ? `Hand closed at ${state.summary.resultBb.toFixed(1)} bb.`
     : lastAction
-      ? `${streetMeta[state.street].label}: ${lastAction.playerName} ${lastAction.type}${lastAction.amount ? ` ${lastAction.amount}` : ''}. Pot ${state.pot}.`
-      : `${streetMeta[state.street].label}: fresh action forming. Pot ${state.pot}.`;
+      ? `${lastAction.playerName} ${lastAction.type}${lastAction.amount ? ` ${lastAction.amount}` : ''}. Pot ${state.pot}.`
+      : `Fresh action. Pot ${state.pot}.`;
+
   const heroStatusLine = state.summary
-    ? 'Review the recap or deal again when you are ready.'
+    ? 'Replay it or deal the next spot.'
     : heroPendingAction
-      ? `${hero.position} to act. ${legal.canCheck ? 'You can check behind.' : `Price to continue: ${legal.toCall}.`} ${canRaise ? `Min raise: ${legal.minRaise}.` : 'Raise closed.'}`
-      : 'Table action is unfolding. Watch who applies pressure before the next decision comes back around.';
+      ? `${hero.position} to act. ${legal.canCheck ? 'Check is live.' : `Call ${legal.toCall}.`} ${canRaise ? `Min raise ${legal.minRaise}.` : 'Raise closed.'}`
+      : 'Watch the table tempo and who is driving the action.';
+
   const sizingPresets = [
     { label: 'Min', amount: legal.minRaise, disabled: !canRaise },
     { label: '33%', amount: Math.round(Math.max(state.pot, state.bb) * 0.33), disabled: !canRaise },
@@ -233,8 +239,8 @@ export default function App() {
   ];
 
   const spotHint = useMemo(() => {
-    const liveVillain = state.players.find((p) => !p.isHero && !p.folded);
-    const heroAggressor = state.actions.some((a) => a.seat === 0 && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet'));
+    const liveVillain = state.players.find((player) => !player.isHero && !player.folded);
+    const heroAggressor = state.actions.some((action) => action.seat === 0 && (action.type === 'raise' || action.type === 'all-in' || action.type === 'bet'));
     return generateSpotHint({
       mode,
       strategyMode,
@@ -245,11 +251,36 @@ export default function App() {
       opponentArchetype: liveVillain?.profile,
       heroAggressor
     });
-  }, [state.players, state.actions, state.street, state.board, mode, strategyMode]);
+  }, [state.players, state.actions, state.street, state.board, mode, strategyMode, hero.holeCards, hero.position]);
+
+  const statusCards = [
+    {
+      key: 'environment',
+      icon: '♠',
+      title: 'Live Table Environment',
+      status: strategyModeLabel[strategyMode],
+      detail: strategyModeCaption[strategyMode]
+    },
+    {
+      key: 'coach',
+      icon: '◎',
+      title: 'Table Coach',
+      status: showHint ? 'Hint ready' : 'Hints optional',
+      detail: 'Keep coaching tucked away until you want a quick nudge or a deeper study note.'
+    },
+    {
+      key: 'review',
+      icon: '↺',
+      title: 'Hand Review',
+      status: state.summary ? 'Replay available' : 'Waiting on next hand',
+      detail: 'Recap stays collapsed by default, but the latest line is always one tap away.'
+    }
+  ] as const;
 
   const dismissOnboarding = () => {
-    setShowOnboarding(false);
-    localStorage.setItem(ONBOARDING_DISMISS_KEY, '1');
+    const nextValue = !showOnboarding;
+    setShowOnboarding(nextValue);
+    localStorage.setItem(ONBOARDING_DISMISS_KEY, nextValue ? '0' : '1');
   };
 
   const acceptLiabilityDisclaimer = () => {
@@ -257,19 +288,30 @@ export default function App() {
     localStorage.setItem(LIABILITY_DISCLAIMER_DISMISS_KEY, '1');
   };
 
+  const toggleUtilityPanel = (panel: UtilityPanelKey) => {
+    setOpenPanel((currentPanel) => currentPanel === panel ? null : panel);
+  };
+
   const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
     if (processing) return;
+
     const next = applyAction(state, 0, type, amount);
     setState(next);
-    setSeatBadges((prev) => ({ ...prev, 0: type.toUpperCase() }));
+    setSeatBadges((previous) => ({ ...previous, 0: type.toUpperCase() }));
     setReplayStep(0);
+    setShowHint(false);
+    setShowHintMore(false);
+
     if (!next.summary) {
       await runPresentationQueue(next);
+    } else {
+      setOpenPanel('recap');
     }
   };
 
   const dealNextHand = async () => {
     if (processing) return;
+
     const next = beginHand(state);
     setState(next);
     setSeatBadges({});
@@ -277,170 +319,169 @@ export default function App() {
     setShowHint(false);
     setShowHintMore(false);
     setShowWhy(false);
+    setActiveSeat(null);
+
     await wait(jitterInRange(pace.dealMs));
     await wait(jitterInRange(pace.dealMs));
+
     if (!next.waitingForHero) {
       await runPresentationQueue(next);
     }
   };
 
-  const currentReplay = replayActions[replayStep];
-
   return (
-    <div className="app">
+    <div className="app premium-shell">
       <header className="top-bar">
         <div className="brand-block">
           <p className="eyebrow">Pocket Pixel Poker</p>
           <h1>Premium Table Practice</h1>
-          <p className="tagline">A serious digital cardroom for hand reading, disciplined decisions, replay study, and opponent-specific adjustment.</p>
+          <p className="tagline">Sit down, play the hand, and open the study surfaces only when you need them.</p>
         </div>
 
-        <div className="menu mode-menu">
-          {(Object.keys(modeLabel) as Mode[]).map((m) => (
-            <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)} title={modeTooltips[m]}>
-              {modeLabel[m]}
-            </button>
-          ))}
-        </div>
+        <ReplayControls mode={mode} onModeChange={setMode} modeLabel={modeLabel} />
 
         <div className="menu strategy-menu">
-          {(Object.keys(strategyModeLabel) as StrategyMode[]).map((m) => (
-            <button key={m} className={strategyMode === m ? 'active' : ''} onClick={() => setStrategyMode(m)} title={strategyModeHelp[m]}>
-              {strategyModeLabel[m]}
+          {(Object.keys(strategyModeLabel) as StrategyMode[]).map((entryMode) => (
+            <button
+              key={entryMode}
+              type="button"
+              className={strategyMode === entryMode ? 'active' : ''}
+              onClick={() => setStrategyMode(entryMode)}
+              title={strategyModeHelp[entryMode]}
+            >
+              {strategyModeLabel[entryMode]}
             </button>
           ))}
-          <button className="neutral" onClick={() => setShowHelp(true)} title="Open the room guide for pacing, hints, replay, and analytics.">
+          <button type="button" className="neutral" onClick={() => setShowHelp(true)} title="Open the room guide.">
             Room Guide
           </button>
         </div>
       </header>
 
-      <section className="hero-strip">
-        <div className="hero-copy">
-          <span className="hero-kicker">Live Table Environment</span>
-          <strong>{strategyModeLabel[strategyMode]}</strong>
-          <p>{strategyModeCaption[strategyMode]}</p>
-        </div>
-        <div className="hero-copy">
-          <span className="hero-kicker">Table Coach</span>
-          <strong>Hints stay optional</strong>
-          <p>Use quick nudges in the moment, then open the deeper note only when you want study context.</p>
-        </div>
-        <div className="hero-copy">
-          <span className="hero-kicker">Hand Review</span>
-          <strong>Replay remains one click away</strong>
-          <p>Play naturally, then step through the line with clearer street markers, reads, and pot tracking.</p>
-        </div>
-      </section>
+      <TableStatusStrip
+        cards={statusCards as unknown as Array<{ key: string; icon: string; title: string; status: string; detail: string }>}
+        expanded={expandedStatus}
+        onToggle={(key) => setExpandedStatus((current) => current === key ? null : (key as StatusCardKey))}
+      />
 
       {mode === 'full-ring' && (
-        <div className="layout">
-          <section className="table-shell">
-            <div className={`table-surface street-${state.street}`}>
-              <div className="table-vignette" />
-              <div className="room-light room-light-left" />
-              <div className="room-light room-light-right" />
-              <div className={`pot-plaque ${potPulse ? 'pot-pulse' : ''}`}>
-                <span className="label">Main Pot</span>
-                <div key={`${state.handId}-${state.pot}`} className="pot-pop">
-                  <ChipStack amount={state.pot} />
-                </div>
+        <div className="practice-layout">
+          <section className="stage-column">
+            <div className="table-topline">
+              <div className="topline-chips">
+                <CompactBadge tone="accent" title={strategyModeCaption[strategyMode]}>
+                  {strategyModeLabel[strategyMode]}
+                </CompactBadge>
+                <CompactBadge>{streetMeta[state.street].label}</CompactBadge>
+                <CompactBadge tone={state.summary ? 'default' : heroPendingAction ? 'hero' : 'default'}>
+                  {heroPendingAction ? 'Hero decision' : state.summary ? 'Hand complete' : 'Table in motion'}
+                </CompactBadge>
               </div>
-              {lastAction && !state.summary && <div key={`${state.handId}-${state.actions.length}`} className={`chip-trail seat-${lastAction.seat}`} />}
-              <div className={`street-banner ${state.street}`}>
-                <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
-              </div>
-              <div className="table-state-ribbon">
-                <strong>{heroPendingAction ? 'Hero decision live' : state.summary ? 'Hand logged' : 'Action in motion'}</strong>
-                <span>{tableStateLine}</span>
-              </div>
-              <div className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`} key={`${state.handId}-${state.board.length}-${streetAnimTick}`}>
-                {state.board.length === 0 && <span className="street-hint">Waiting for the next street...</span>}
-                {state.board.map((card, index) => (
-                  <PokerCard key={`${card.rank}${card.suit}${index}`} value={formatCard(card)} />
-                ))}
-              </div>
-
-              <div className="seats-ring">
-                {state.players.map((player, index) => (
-                  <article
-                    className={`seat-panel ${seatClass[index]} ${player.isHero ? 'hero' : ''} ${player.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''} ${thinkingSeat === index ? 'is-thinking' : ''} ${seatBadges[index] && !state.summary ? 'has-acted' : ''}`}
-                    key={player.id}
-                  >
-                    <div className="seat-head">
-                      <div>
-                        <strong>{player.name}</strong>
-                        <div className="seat-subhead">
-                          <span className="badge">{player.position}</span>
-                          {!player.isHero && player.profile && <span className="profile-pill">{player.profile}</span>}
-                        </div>
-                      </div>
-                      {!player.isHero && player.profile && <span className="seat-read">{formatPlayerRead(player.profile)}</span>}
-                    </div>
-                    <div className="seat-stack">
-                      <ChipStack amount={player.stack} />
-                    </div>
-                    <div className="seat-cards">
-                      {player.isHero
-                        ? player.holeCards.map((card, i) => <PokerCard key={`${player.id}-${i}`} value={formatCard(card)} />)
-                        : player.holeCards.length > 0 && (
-                            <>
-                              <PokerCard hidden />
-                              <PokerCard hidden />
-                            </>
-                          )}
-                    </div>
-                    {thinkingSeat === index && <div className="thinking">Reading the spot...</div>}
-                    {seatBadges[index] && !state.summary && (
-                      <div key={`${state.handId}-${index}-${seatBadges[index]}`} className="action-badge">{seatBadges[index]}</div>
-                    )}
-                  </article>
-                ))}
+              <div className="topline-actions">
+                <HintPopover
+                  visible={showHint}
+                  quick={spotHint.quick}
+                  detail={spotHint.explainMore}
+                  expanded={showHintMore}
+                  onToggle={() => {
+                    setShowHint((value) => !value);
+                    setShowHintMore(false);
+                  }}
+                  onToggleExpanded={() => setShowHintMore((value) => !value)}
+                />
+                {state.summary && (
+                  <button type="button" className="neutral" onClick={() => setMode('replay')}>
+                    Replay Last Hand
+                  </button>
+                )}
               </div>
             </div>
 
-            <div className="action-dock">
-              {showOnboarding && (
-                <div className="coach-card">
-                  <h4>Welcome to the room</h4>
-                  <ul>
-                    {welcomeChecklist.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                  <button className="neutral" onClick={dismissOnboarding}>Enter Table</button>
+            <section className="table-shell stage-focus">
+              <div className={`table-surface street-${state.street}`}>
+                <div className="table-vignette" />
+                <div className="room-light room-light-left" />
+                <div className="room-light room-light-right" />
+                <div className={`pot-plaque ${potPulse ? 'pot-pulse' : ''}`}>
+                  <span className="label">Main Pot</span>
+                  <div key={`${state.handId}-${state.pot}`} className="pot-pop">
+                    <ChipStack amount={state.pot} />
+                  </div>
                 </div>
-              )}
-
-              <div className="action-dock-top">
-                <div className="pace-row">
-                  <label>Table Pace</label>
-                  {(['Fast', 'Normal', 'Study'] as PaceMode[]).map((p) => (
-                    <button key={p} className={paceMode === p ? 'active' : ''} onClick={() => setPaceMode(p)} title={paceHelp[p]}>
-                      {p}
-                    </button>
+                {lastAction && !state.summary && (
+                  <div key={`${state.handId}-${state.actions.length}`} className={`chip-trail seat-${lastAction.seat}`} />
+                )}
+                <div className={`street-banner ${state.street}`}>
+                  <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
+                </div>
+                <div className="table-state-ribbon">
+                  <strong>{heroPendingAction ? 'Decision live' : state.summary ? 'Recap ready' : 'Action in motion'}</strong>
+                  <span>{tableStateLine}</span>
+                </div>
+                <div
+                  className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`}
+                  key={`${state.handId}-${state.board.length}-${streetAnimTick}`}
+                >
+                  {state.board.length === 0 && <span className="street-hint">Waiting for the board...</span>}
+                  {state.board.map((card, index) => (
+                    <PokerCard key={`${card.rank}${card.suit}${index}`} value={formatCard(card)} />
                   ))}
                 </div>
-
-                <div className="hint-row">
-                  <button
-                    className="neutral"
-                    onClick={() => {
-                      setShowHint((value) => !value);
-                      setShowHintMore(false);
-                    }}
-                    title="Open a table-side coaching nudge for the current spot."
-                  >
-                    Coaching Hint
-                  </button>
+                {activeSeatPlayer && (
+                  <aside className="seat-popover">
+                    <p className="panel-kicker">Seat Detail</p>
+                    <h3>{activeSeatPlayer.name}</h3>
+                    <div className="seat-popover-row">
+                      <CompactBadge tone={activeSeatPlayer.isHero ? 'hero' : 'default'}>{activeSeatPlayer.position}</CompactBadge>
+                      {!activeSeatPlayer.isHero && activeSeatPlayer.profile && (
+                        <CompactBadge>{activeSeatPlayer.profile}</CompactBadge>
+                      )}
+                    </div>
+                    <p className="compact-copy">
+                      {activeSeatPlayer.isHero ? 'Your current seat and stack.' : formatPlayerRead(activeSeatPlayer.profile)}
+                    </p>
+                  </aside>
+                )}
+                <div className="seats-ring">
+                  {state.players.map((player, index) => (
+                    <PlayerSeatCard
+                      key={player.id}
+                      player={player}
+                      seatClass={seatClass[index]}
+                      activeTurn={(state.currentSeat === index && !state.summary) || thinkingSeat === index}
+                      thinking={thinkingSeat === index}
+                      actionBadge={seatBadges[index] && !state.summary ? seatBadges[index] : undefined}
+                      selected={activeSeat === index}
+                      onSelect={() => setActiveSeat((current) => current === index ? null : index)}
+                      cardLabels={player.holeCards.map((card) => formatCard(card))}
+                      archetypeRead={formatPlayerRead(player.profile)}
+                    />
+                  ))}
                 </div>
               </div>
+            </section>
 
-              <div className={`action-spotlight ${heroPendingAction ? 'live' : ''}`}>
-                <div>
-                  <p className="panel-kicker">Current Decision</p>
-                  <h3>{heroPendingAction ? `${hero.position} in the box` : state.summary ? 'Hand archived for study' : 'Observe the room'}</h3>
-                  <p className="microcopy">{heroStatusLine}</p>
+            <section className="control-grid">
+              <StartSessionCard
+                expanded={showOnboarding}
+                bullets={welcomeChecklist}
+                onToggle={dismissOnboarding}
+                onDeal={dealNextHand}
+                disabled={processing}
+              />
+
+              <section className={`decision-card ${heroPendingAction ? 'live' : ''}`}>
+                <div className="card-heading">
+                  <div>
+                    <p className="panel-kicker">Current Decision</p>
+                    <h3>{heroPendingAction ? `${hero.position} in the box` : state.summary ? 'Hand archived' : 'Observe the room'}</h3>
+                  </div>
+                  <PaceControls paceMode={paceMode} onChange={setPaceMode} paceHelp={paceHelp} />
                 </div>
-                <div className="action-intel">
+
+                <p className="compact-copy">{heroStatusLine}</p>
+
+                <div className="intel-row">
                   <div className="intel-pill">
                     <span>Pot</span>
                     <strong>{state.pot}</strong>
@@ -458,207 +499,174 @@ export default function App() {
                     <strong>{hero.stack}</strong>
                   </div>
                 </div>
-              </div>
 
-              <div className="primary-actions">
-                <button className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
-                  Fold
-                </button>
-                <button
-                  className={`neutral ${legal.canCheck ? 'soft' : ''}`}
-                  disabled={!!state.summary || processing}
-                  onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
-                >
-                  {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
-                </button>
-                <button className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
-                  Raise To {selectedBet}
-                </button>
-                <button className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
-                  All-in
-                </button>
-              </div>
-
-              {showHint && (
-                <div className="hint-card">
-                  <p><strong>Coach Nudge:</strong> {spotHint.quick}</p>
-                  <button className="neutral" onClick={() => setShowHintMore((value) => !value)}>
-                    {showHintMore ? 'Hide Study Note' : 'Open Study Note'}
+                <div className="primary-actions">
+                  <button type="button" className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
+                    Fold
                   </button>
-                  {showHintMore && <p>{spotHint.explainMore}</p>}
-                </div>
-              )}
-
-              <div className="sizing-controls">
-                <div className="slider-row">
-                  <label>Raise sizing: {selectedBet}</label>
-                  <input
-                    type="range"
-                    min={legal.minRaise}
-                    max={Math.max(legal.minRaise, legal.max)}
-                    value={selectedBet}
-                    onChange={(event) => setBetAmount(Number(event.target.value))}
-                    disabled={!canRaise || processing}
-                  />
-                </div>
-                <div className="presets">
-                  {sizingPresets.map((preset) => (
-                    <button
-                      key={preset.label}
-                      disabled={preset.disabled}
-                      onClick={() => setBetAmount(clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max)))}
-                      title="Set a faster betting preset for the current spot."
-                    >
-                      {preset.label}
-                      <strong>{preset.label === 'All-in' ? legal.max : clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max))}</strong>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button className="deal-next" onClick={dealNextHand} disabled={processing}>
-                Deal Next Hand
-              </button>
-              {!state.summary && <p className="microcopy action-footer">Need a fresh spot? A new hand keeps the room moving without dropping your session analytics.</p>}
-            </div>
-          </section>
-
-          <aside className="study-panel">
-            <section className="panel-section">
-              <div className="panel-heading">
-                <div>
-                  <p className="panel-kicker">Current Room Policy</p>
-                  <h3>{strategyModeLabel[strategyMode]}</h3>
-                </div>
-                <button className="debug-toggle" onClick={() => setShowHelp(true)}>Room Guide</button>
-              </div>
-              <p className="tagline">{strategyModeCaption[strategyMode]}</p>
-            </section>
-
-            <section className="panel-section">
-              <div className="panel-heading">
-                <div>
-                  <p className="panel-kicker">Hand Recap</p>
-                  <h3>Study the last decision path</h3>
-                </div>
-                {state.summary && (
-                  <button className="neutral" onClick={() => setMode('replay')}>
-                    Open Replay
+                  <button
+                    type="button"
+                    className={`neutral ${legal.canCheck ? 'soft' : ''}`}
+                    disabled={!!state.summary || processing}
+                    onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
+                  >
+                    {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
                   </button>
-                )}
-              </div>
-              {state.summary ? (
-                <div className="summary-block" key={state.summary.id}>
-                  <div className="summary-line">{state.summary.heroCards.map(formatCard).join(' ')} | {state.summary.heroPosition}</div>
-                  <div className="summary-line">Board: {state.summary.board.map(formatCard).join(' ') || '-'}</div>
-                  <div className="summary-chipline">
-                    <span>Result</span>
-                    <strong>{state.summary.resultChips} chips ({state.summary.resultBb.toFixed(1)} bb)</strong>
+                  <button type="button" className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
+                    Raise To {selectedBet}
+                  </button>
+                  <button type="button" className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
+                    All-in
+                  </button>
+                </div>
+
+                <div className="sizing-controls compact">
+                  <div className="slider-row">
+                    <label htmlFor="raise-size-slider">
+                      <span>Raise size</span>
+                      <strong>{selectedBet}</strong>
+                    </label>
+                    <input
+                      id="raise-size-slider"
+                      type="range"
+                      min={legal.minRaise}
+                      max={Math.max(legal.minRaise, legal.max)}
+                      value={selectedBet}
+                      onChange={(event) => setBetAmount(Number(event.target.value))}
+                      disabled={!canRaise || processing}
+                    />
                   </div>
-                  <div className="action-pins">
-                    {state.summary.actions.slice(0, 6).map((action, index) => (
-                      <span key={`${state.summary!.id}-${index}`}>{action.street.slice(0, 1).toUpperCase()} | {action.playerName} {action.type}</span>
+                  <div className="presets">
+                    {sizingPresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        disabled={preset.disabled}
+                        onClick={() => setBetAmount(clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max)))}
+                        title="Set a quick sizing."
+                      >
+                        <span>{preset.label}</span>
+                        <strong>{preset.label === 'All-in' ? legal.max : clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max))}</strong>
+                      </button>
                     ))}
                   </div>
-                  <div className="rating-pill" title={ratingHelp[state.summary.rating]}>Room grade: {state.summary.rating}</div>
-                  <p>{state.summary.feedback}</p>
-                  <button className="neutral" onClick={() => setShowWhy((value) => !value)}>
-                    {showWhy ? 'Hide Breakdown' : 'Why this line?'}
-                  </button>
-                  {showWhy && <p>{state.summary.why}</p>}
-                  <p><em>Discipline note:</em> {state.summary.tighter}</p>
-                  <p><em>Pressure note:</em> {state.summary.aggressive}</p>
                 </div>
-              ) : (
-                <p className="coach-placeholder">No hand review yet. Deal a hand, play it naturally, then use the recap here to study the result.</p>
-              )}
+              </section>
+            </section>
+          </section>
+
+          <aside className="utility-rail">
+            <section className="utility-hero-card">
+              <div>
+                <p className="panel-kicker">Active Room</p>
+                <h3>{strategyModeLabel[strategyMode]}</h3>
+              </div>
+              <p className="compact-copy">{strategyModeCaption[strategyMode]}</p>
             </section>
 
-            <section className="panel-section">
-              <div className="panel-heading">
-                <div>
-                  <p className="panel-kicker">Opponent Classes</p>
-                  <h3>Recognizable room personalities</h3>
-                </div>
+            <ExpandableSidePanel
+              kicker="Current Room Policy"
+              title={strategyModeLabel[strategyMode]}
+              summary={strategyMode === 'exploit' ? 'Exploit adjustments live' : 'Baseline discipline live'}
+              open={openPanel === 'room'}
+              onToggle={() => toggleUtilityPanel('room')}
+              action={<button type="button" className="quiet-button" onClick={() => setShowHelp(true)}>Guide</button>}
+            >
+              <p className="compact-copy">{strategyModeCaption[strategyMode]}</p>
+              <div className="room-policy-points">
+                <span>{strategyMode === 'exploit' ? 'Lean into leaks.' : 'Start balanced.'}</span>
+                <span>{strategyMode === 'exploit' ? 'Value thinner versus callers.' : 'Protect your ranges.'}</span>
+                <span>{strategyMode === 'exploit' ? 'Pressure over-folders.' : 'Add pressure selectively.'}</span>
               </div>
-              <div className="villain-grid">
-                {liveVillains.map((villain) => (
-                  <article key={villain.seat} className="villain-card">
-                    <strong>{villain.name}</strong>
-                    <span className="profile-pill">{villain.profile}</span>
-                    <p>{villain.note}</p>
-                  </article>
-                ))}
+            </ExpandableSidePanel>
+
+            <ExpandableSidePanel
+              kicker="Hand Recap"
+              title={state.summary ? 'Latest hand ready' : 'Waiting on next hand'}
+              summary={state.summary ? `${state.summary.resultBb.toFixed(1)} bb` : 'No recap yet'}
+              open={openPanel === 'recap'}
+              onToggle={() => toggleUtilityPanel('recap')}
+            >
+              <HandRecapPanel
+                summary={state.summary}
+                ratingTitle={state.summary ? ratingHelp[state.summary.rating] : undefined}
+                showWhy={showWhy}
+                onToggleWhy={() => setShowWhy((value) => !value)}
+                onOpenReplay={() => setMode('replay')}
+              />
+            </ExpandableSidePanel>
+
+            <section className="drawer-trigger-card">
+              <div>
+                <p className="panel-kicker">Opponent Classes</p>
+                <h3>{liveVillains.length} seats tagged</h3>
               </div>
+              <p className="compact-copy">Open the player drawer for archetypes without crowding the felt.</p>
+              <button type="button" className="neutral" onClick={() => setShowOpponentDrawer(true)}>
+                Open Opponent Drawer
+              </button>
             </section>
 
-            <section className="panel-section">
-              <div className="panel-heading">
-                <div>
-                  <p className="panel-kicker">Session Analytics</p>
-                  <h3>Results that support study</h3>
-                </div>
-                <button className="debug-toggle" onClick={() => setShowDebug((value) => !value)}>
-                  {showDebug ? 'Hide Debug' : 'Show Debug'}
+            <ExpandableSidePanel
+              kicker="Session Analytics"
+              title="Study trends"
+              summary={`${sessionHighlights.hands} hands | ${state.stats.winLossBb.toFixed(1)} bb`}
+              open={openPanel === 'analytics'}
+              onToggle={() => toggleUtilityPanel('analytics')}
+              action={
+                <button type="button" className="quiet-button" onClick={() => setShowDebug((value) => !value)}>
+                  {showDebug ? 'Hide debug' : 'Show debug'}
                 </button>
-              </div>
-
-              <div className="stats-grid">
+              }
+            >
+              <div className="stats-grid compact-grid">
                 <div className="stat-card">
                   <span>Hands</span>
                   <strong>{sessionHighlights.hands}</strong>
-                  <p>Volume logged this session.</p>
                 </div>
                 <div className="stat-card">
                   <span>Net</span>
                   <strong>{state.stats.winLossBb.toFixed(1)} bb</strong>
-                  <p>Overall result across completed hands.</p>
                 </div>
                 <div className="stat-card">
                   <span>VPIP</span>
                   <strong>{sessionHighlights.vpip}%</strong>
-                  <p>How often you entered the pot.</p>
                 </div>
                 <div className="stat-card">
                   <span>PFR</span>
                   <strong>{sessionHighlights.pfr}%</strong>
-                  <p>Preflop pressure frequency.</p>
                 </div>
                 <div className="stat-card">
                   <span>WTSD</span>
                   <strong>{sessionHighlights.wtsd}%</strong>
-                  <p>How often you reached showdown.</p>
                 </div>
                 <div className="stat-card">
-                  <span>Aggression</span>
+                  <span>Agg</span>
                   <strong>{sessionHighlights.aggression}%</strong>
-                  <p>Raises and c-bets versus passive lines.</p>
                 </div>
               </div>
 
               <div className="trend-grid">
                 <div className="trend-card">
-                  <span>Best hand</span>
+                  <span>Best</span>
                   <strong>{sessionHighlights.biggestWin} bb</strong>
-                  <p>Largest positive swing.</p>
                 </div>
                 <div className="trend-card">
-                  <span>Largest setback</span>
+                  <span>Worst</span>
                   <strong>{sessionHighlights.biggestSetback} bb</strong>
-                  <p>Worst single-hand loss.</p>
                 </div>
               </div>
 
               <div className="leak-card">
-                <h4>Recurring pressure points</h4>
+                <h4>Pressure points</h4>
                 {sessionHighlights.leaks.length > 0 ? (
-                  <ul className="stats-list">
+                  <ul className="stats-list compact-list">
                     {sessionHighlights.leaks.slice(0, 3).map(([label, count]) => (
                       <li key={label}>{label}: {count}</li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="microcopy">No repeated leak cluster detected yet. Keep logging hands and the room will surface patterns.</p>
+                  <p className="compact-copy">No recurring cluster yet.</p>
                 )}
               </div>
 
@@ -667,18 +675,13 @@ export default function App() {
                   <h4>Bot Debug</h4>
                   <div>Archetype: {state.botDebug.archetype}</div>
                   <div>Mode: {state.botDebug.mode}</div>
-                  <div>Hand bucket: {state.botDebug.bucket}</div>
-                  <div>Board bucket: {state.botDebug.texture}</div>
+                  <div>Bucket: {state.botDebug.bucket}</div>
+                  <div>Texture: {state.botDebug.texture}</div>
                   {state.botDebug.adjustments.length > 0 && <div>Adjustments: {state.botDebug.adjustments.join(' | ')}</div>}
                   <div>Reason: {state.botDebug.reason}</div>
-                  <div className="debug-weights">
-                    {Object.entries(state.botDebug.weights).map(([key, value]) => (
-                      <span key={key}>{key}:{value.toFixed(2)}</span>
-                    ))}
-                  </div>
                 </div>
               )}
-            </section>
+            </ExpandableSidePanel>
           </aside>
         </div>
       )}
@@ -692,13 +695,15 @@ export default function App() {
               <p className="tagline">{replayGuide.body}</p>
             </div>
             <div className="replay-meta">
-              <span className="profile-pill">{strategyModeLabel[strategyMode]}</span>
-              <button className="neutral" onClick={() => setMode('full-ring')}>Back To Table</button>
+              <CompactBadge>{strategyModeLabel[strategyMode]}</CompactBadge>
+              <button type="button" className="neutral" onClick={() => setMode('full-ring')} title={modeTooltips['full-ring']}>
+                Back To Table
+              </button>
             </div>
           </div>
 
           {replayActions.length === 0 ? (
-            <p className="coach-placeholder">No hand history yet. Play one full hand at the table, then return here to review the action path.</p>
+            <p className="compact-copy">No hand history yet. Play one hand at the table, then return here.</p>
           ) : (
             <>
               <div className="replay-stage">
@@ -712,6 +717,7 @@ export default function App() {
                     {replayActions.map((step, index) => (
                       <button
                         key={`${step.street}-marker-${index}`}
+                        type="button"
                         className={`replay-progress-stop ${index === replayStep ? 'active' : ''}`}
                         onClick={() => setReplayStep(index)}
                         title={`${step.street} - ${step.who} ${step.did}`}
@@ -721,6 +727,7 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+
                 {currentReplay && (
                   <div className="replay-focus">
                     <div className="replay-focus-card">
@@ -739,41 +746,54 @@ export default function App() {
                 )}
               </div>
 
-              <div className="timeline">
-                {replayActions.map((step, index) => (
-                  <button
-                    key={`${step.street}-${step.who}-${index}`}
-                    className={`timeline-step ${index === replayStep ? 'active' : ''}`}
-                    onClick={() => setReplayStep(index)}
-                  >
-                    <span>{step.street}</span>
-                    <strong>{step.who}</strong>
-                    <em>{step.did}</em>
-                    <small>Pot {step.potAfter}</small>
-                  </button>
-                ))}
-              </div>
+              <ReplayTimeline steps={replayActions} replayStep={replayStep} onStepChange={setReplayStep} />
 
               <div className="replay-controls">
-                <button onClick={() => setReplayStep((value) => Math.max(0, value - 1))}>Previous</button>
-                <button onClick={() => setReplayStep((value) => Math.min(replayActions.length - 1, value + 1))}>Next</button>
+                <button type="button" onClick={() => setReplayStep((value) => Math.max(0, value - 1))}>Previous</button>
+                <button type="button" onClick={() => setReplayStep((value) => Math.min(replayActions.length - 1, value + 1))}>Next</button>
               </div>
             </>
           )}
         </section>
       )}
 
+      {showOpponentDrawer && (
+        <div className="modal-backdrop" onClick={() => setShowOpponentDrawer(false)}>
+          <section className="help-modal opponent-drawer" onClick={(event) => event.stopPropagation()}>
+            <div className="feedback-head">
+              <div>
+                <p className="panel-kicker">Opponent Classes</p>
+                <h3>Quick player reads</h3>
+              </div>
+              <button type="button" className="neutral" onClick={() => setShowOpponentDrawer(false)}>Close</button>
+            </div>
+            <div className="villain-grid">
+              {liveVillains.map((villain) => (
+                <article key={villain.seat} className="villain-card">
+                  <strong>{villain.name}</strong>
+                  <CompactBadge>{villain.profile}</CompactBadge>
+                  <p>{villain.note}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+
       {showHelp && (
         <div className="modal-backdrop" onClick={() => setShowHelp(false)}>
           <section className="help-modal" onClick={(event) => event.stopPropagation()}>
             <div className="feedback-head">
-              <h3>Pocket Pixel Poker Room Guide</h3>
-              <button className="neutral" onClick={() => setShowHelp(false)}>Close</button>
+              <div>
+                <p className="panel-kicker">Room Guide</p>
+                <h3>Pocket Pixel Poker</h3>
+              </div>
+              <button type="button" className="neutral" onClick={() => setShowHelp(false)}>Close</button>
             </div>
             {helpSections.map((section) => (
               <div key={section.title} className="help-section">
                 <h4>{section.title}</h4>
-                <ul>
+                <ul className="compact-list">
                   {section.bullets.map((point) => <li key={point}>{point}</li>)}
                 </ul>
               </div>
@@ -785,19 +805,11 @@ export default function App() {
       {showLiabilityDisclaimer && (
         <div className="modal-backdrop">
           <section className="help-modal disclaimer-modal">
-            <h3>Training Use Notice</h3>
-            <p>
-              Pocket Pixel Poker is a practice environment for studying hand contexts, opponent classes, and disciplined decision-making.
-              It does not authorize violating any law, platform rule, or integrity policy.
-            </p>
-            <p>
-              <strong>Adaptive Pressure</strong> means adjusting to visible weaknesses like over-folding, over-calling, or unstable sizing patterns.
-              It is a study lens for exploitative poker strategy, not cheating.
-            </p>
-            <p>
-              You remain responsible for using the software ethically and lawfully.
-            </p>
-            <button className="accent" onClick={acceptLiabilityDisclaimer}>I understand</button>
+            <p className="panel-kicker">Training Use Notice</p>
+            <h3>Practice surface only</h3>
+            <p>Use this room to study hand reading, pacing, and exploitative versus balanced choices.</p>
+            <p>Adaptive Pressure means reacting to visible leaks, not violating any law, platform rule, or integrity policy.</p>
+            <button type="button" className="accent" onClick={acceptLiabilityDisclaimer}>I understand</button>
           </section>
         </div>
       )}
