@@ -267,6 +267,22 @@ button.soft { background: linear-gradient(180deg, rgba(103, 120, 142, 0.32), rgb
   color: var(--muted);
 }
 
+.status-detail-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 180ms ease, opacity 180ms ease;
+}
+
+.status-detail-wrap.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.status-detail-wrap .status-detail {
+  overflow: hidden;
+}
+
 .practice-layout {
   display: grid;
   grid-template-columns: minmax(0, 2.55fr) minmax(280px, 0.95fr);
@@ -734,9 +750,53 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
   padding: 0 18px 12px;
 }
 .utility-panel-body {
-  padding: 0 18px 18px;
   display: grid;
   gap: 12px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 18px;
+  transform: translateY(-8px);
+  transition: max-height 220ms ease, opacity 180ms ease, transform 180ms ease, padding 180ms ease;
+}
+
+.utility-panel-body.open {
+  max-height: 640px;
+  opacity: 1;
+  padding: 0 18px 18px;
+  transform: translateY(0);
+}
+
+.utility-panel.open .utility-panel-toggle,
+.status-card.open .status-card-toggle {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0));
+}
+
+.utility-panel-body[aria-hidden='true'] {
+  pointer-events: none;
+}
+
+.status-detail-wrap[aria-hidden='true'] {
+  pointer-events: none;
+}
+
+.hint-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: min(320px, 76vw);
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(120, 180, 162, 0.26);
+  background: linear-gradient(180deg, rgba(29, 70, 62, 0.5), rgba(10, 17, 18, 0.98));
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 12px;
+  z-index: 4;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .room-policy-points span,
@@ -807,22 +867,30 @@ input[type='range'] { width: 100%; accent-color: var(--gold-bright); }
 .replay-focus { grid-template-columns: minmax(150px, 190px) minmax(150px, 190px) minmax(0, 1fr); }
 
 .hint-popover-shell { position: relative; }
-.hint-popover {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 10px);
-  width: min(320px, 76vw);
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(120, 180, 162, 0.26);
-  background: linear-gradient(180deg, rgba(29, 70, 62, 0.5), rgba(10, 17, 18, 0.98));
-  box-shadow: var(--shadow-md);
-  display: grid;
-  gap: 8px;
-  z-index: 4;
+.hint-popover.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
+
 .hint-popover p,
 .hint-detail { margin: 0; }
+
+.hint-detail-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 160ms ease, opacity 160ms ease;
+}
+
+.hint-detail-wrap.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.hint-detail-wrap .hint-detail {
+  overflow: hidden;
+}
 
 .modal-backdrop {
   position: fixed;

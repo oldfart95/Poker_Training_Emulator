@@ -2,29 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { decideBotAction } from './ai/decision';
 import { Archetype } from './ai/tuning/archetypes';
 import { Position } from './ai/tuning/ranges';
-import { beginHand, applyAction, createInitialState, legalActions, runBotsUntilHero, GameState } from './engine/gameEngine';
-import { formatCard } from './engine/deck';
+import { applyAction, beginHand, createInitialState, GameState, legalActions, runBotsUntilHero } from './engine/gameEngine';
 import { Mode, Player } from './engine/types';
 import { helpSections, paceHelp, ratingHelp, strategyModeHelp } from './hints/contextualHelp';
 import { generateSpotHint } from './hints/hintGenerator';
 import { LIABILITY_DISCLAIMER_DISMISS_KEY, ONBOARDING_DISMISS_KEY, replayGuide, welcomeChecklist } from './hints/onboardingText';
-import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/pacing';
+import { jitterInRange, PaceMode, paceProfiles, wait } from './presentation/pacing';
 import { StrategyMode } from './strategy/types';
 import { formatReplaySteps } from './training/replay';
-import {
-  ChipStack,
-  CompactBadge,
-  ExpandableSidePanel,
-  HandRecapPanel,
-  HintPopover,
-  PaceControls,
-  PlayerSeatCard,
-  PokerCard,
-  ReplayControls,
-  ReplayTimeline,
-  StartSessionCard,
-  TableStatusStrip
-} from './components/TableLayout';
+import { CompactBadge, ReplayControls, TableStatusStrip } from './components/TableLayout';
+import { ReplayView } from './components/ReplayView';
+import { TableStage } from './components/TableStage';
+import { UtilityRail } from './components/UtilityRail';
 
 const modeLabel: Record<Mode, string> = { 'full-ring': 'Table Practice', replay: 'Replay Last Hand' };
 const seatClass = ['top', 'top-right', 'bottom-right', 'bottom', 'bottom-left', 'top-left'];
@@ -256,21 +245,21 @@ export default function App() {
   const statusCards = [
     {
       key: 'environment',
-      icon: '♠',
+      icon: '\u2660',
       title: 'Live Table Environment',
       status: strategyModeLabel[strategyMode],
       detail: strategyModeCaption[strategyMode]
     },
     {
       key: 'coach',
-      icon: '◎',
+      icon: '\u25ce',
       title: 'Table Coach',
       status: showHint ? 'Hint ready' : 'Hints optional',
       detail: 'Keep coaching tucked away until you want a quick nudge or a deeper study note.'
     },
     {
       key: 'review',
-      icon: '↺',
+      icon: '\u21ba',
       title: 'Hand Review',
       status: state.summary ? 'Replay available' : 'Waiting on next hand',
       detail: 'Recap stays collapsed by default, but the latest line is always one tap away.'
@@ -288,7 +277,7 @@ export default function App() {
     localStorage.setItem(LIABILITY_DISCLAIMER_DISMISS_KEY, '1');
   };
 
-  const toggleUtilityPanel = (panel: UtilityPanelKey) => {
+  const toggleUtilityPanel = (panel: Exclude<UtilityPanelKey, null>) => {
     setOpenPanel((currentPanel) => currentPanel === panel ? null : panel);
   };
 
@@ -366,395 +355,81 @@ export default function App() {
 
       {mode === 'full-ring' && (
         <div className="practice-layout">
-          <section className="stage-column">
-            <div className="table-topline">
-              <div className="topline-chips">
-                <CompactBadge tone="accent" title={strategyModeCaption[strategyMode]}>
-                  {strategyModeLabel[strategyMode]}
-                </CompactBadge>
-                <CompactBadge>{streetMeta[state.street].label}</CompactBadge>
-                <CompactBadge tone={state.summary ? 'default' : heroPendingAction ? 'hero' : 'default'}>
-                  {heroPendingAction ? 'Hero decision' : state.summary ? 'Hand complete' : 'Table in motion'}
-                </CompactBadge>
-              </div>
-              <div className="topline-actions">
-                <HintPopover
-                  visible={showHint}
-                  quick={spotHint.quick}
-                  detail={spotHint.explainMore}
-                  expanded={showHintMore}
-                  onToggle={() => {
-                    setShowHint((value) => !value);
-                    setShowHintMore(false);
-                  }}
-                  onToggleExpanded={() => setShowHintMore((value) => !value)}
-                />
-                {state.summary && (
-                  <button type="button" className="neutral" onClick={() => setMode('replay')}>
-                    Replay Last Hand
-                  </button>
-                )}
-              </div>
-            </div>
+          <TableStage
+            strategyMode={strategyMode}
+            strategyModeLabel={strategyModeLabel}
+            strategyModeCaption={strategyModeCaption}
+            streetMeta={streetMeta}
+            state={state}
+            potPulse={potPulse}
+            lastAction={lastAction}
+            heroPendingAction={heroPendingAction}
+            tableStateLine={tableStateLine}
+            activeSeatPlayer={activeSeatPlayer}
+            activeSeat={activeSeat}
+            thinkingSeat={thinkingSeat}
+            seatBadges={seatBadges}
+            seatClass={seatClass}
+            formatPlayerRead={formatPlayerRead}
+            setActiveSeat={setActiveSeat}
+            streetAnimTick={streetAnimTick}
+            showHint={showHint}
+            showHintMore={showHintMore}
+            spotHint={spotHint}
+            setShowHint={setShowHint}
+            setShowHintMore={setShowHintMore}
+            setMode={setMode}
+            showOnboarding={showOnboarding}
+            welcomeChecklist={welcomeChecklist}
+            dismissOnboarding={dismissOnboarding}
+            dealNextHand={dealNextHand}
+            processing={processing}
+            hero={hero}
+            legal={legal}
+            canRaise={canRaise}
+            selectedBet={selectedBet}
+            sizingPresets={sizingPresets}
+            heroStatusLine={heroStatusLine}
+            heroAction={heroAction}
+            paceMode={paceMode}
+            setPaceMode={setPaceMode}
+            setBetAmount={setBetAmount}
+            paceHelp={paceHelp}
+          />
 
-            <section className="table-shell stage-focus">
-              <div className={`table-surface street-${state.street}`}>
-                <div className="table-vignette" />
-                <div className="room-light room-light-left" />
-                <div className="room-light room-light-right" />
-                <div className={`pot-plaque ${potPulse ? 'pot-pulse' : ''}`}>
-                  <span className="label">Main Pot</span>
-                  <div key={`${state.handId}-${state.pot}`} className="pot-pop">
-                    <ChipStack amount={state.pot} />
-                  </div>
-                </div>
-                {lastAction && !state.summary && (
-                  <div key={`${state.handId}-${state.actions.length}`} className={`chip-trail seat-${lastAction.seat}`} />
-                )}
-                <div className={`street-banner ${state.street}`}>
-                  <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
-                </div>
-                <div className="table-state-ribbon">
-                  <strong>{heroPendingAction ? 'Decision live' : state.summary ? 'Recap ready' : 'Action in motion'}</strong>
-                  <span>{tableStateLine}</span>
-                </div>
-                <div
-                  className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`}
-                  key={`${state.handId}-${state.board.length}-${streetAnimTick}`}
-                >
-                  {state.board.length === 0 && <span className="street-hint">Waiting for the board...</span>}
-                  {state.board.map((card, index) => (
-                    <PokerCard key={`${card.rank}${card.suit}${index}`} value={formatCard(card)} />
-                  ))}
-                </div>
-                {activeSeatPlayer && (
-                  <aside className="seat-popover">
-                    <p className="panel-kicker">Seat Detail</p>
-                    <h3>{activeSeatPlayer.name}</h3>
-                    <div className="seat-popover-row">
-                      <CompactBadge tone={activeSeatPlayer.isHero ? 'hero' : 'default'}>{activeSeatPlayer.position}</CompactBadge>
-                      {!activeSeatPlayer.isHero && activeSeatPlayer.profile && (
-                        <CompactBadge>{activeSeatPlayer.profile}</CompactBadge>
-                      )}
-                    </div>
-                    <p className="compact-copy">
-                      {activeSeatPlayer.isHero ? 'Your current seat and stack.' : formatPlayerRead(activeSeatPlayer.profile)}
-                    </p>
-                  </aside>
-                )}
-                <div className="seats-ring">
-                  {state.players.map((player, index) => (
-                    <PlayerSeatCard
-                      key={player.id}
-                      player={player}
-                      seatClass={seatClass[index]}
-                      activeTurn={(state.currentSeat === index && !state.summary) || thinkingSeat === index}
-                      thinking={thinkingSeat === index}
-                      actionBadge={seatBadges[index] && !state.summary ? seatBadges[index] : undefined}
-                      selected={activeSeat === index}
-                      onSelect={() => setActiveSeat((current) => current === index ? null : index)}
-                      cardLabels={player.holeCards.map((card) => formatCard(card))}
-                      archetypeRead={formatPlayerRead(player.profile)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            <section className="control-grid">
-              <StartSessionCard
-                expanded={showOnboarding}
-                bullets={welcomeChecklist}
-                onToggle={dismissOnboarding}
-                onDeal={dealNextHand}
-                disabled={processing}
-              />
-
-              <section className={`decision-card ${heroPendingAction ? 'live' : ''}`}>
-                <div className="card-heading">
-                  <div>
-                    <p className="panel-kicker">Current Decision</p>
-                    <h3>{heroPendingAction ? `${hero.position} in the box` : state.summary ? 'Hand archived' : 'Observe the room'}</h3>
-                  </div>
-                  <PaceControls paceMode={paceMode} onChange={setPaceMode} paceHelp={paceHelp} />
-                </div>
-
-                <p className="compact-copy">{heroStatusLine}</p>
-
-                <div className="intel-row">
-                  <div className="intel-pill">
-                    <span>Pot</span>
-                    <strong>{state.pot}</strong>
-                  </div>
-                  <div className="intel-pill">
-                    <span>{legal.canCheck ? 'Check' : 'To call'}</span>
-                    <strong>{legal.canCheck ? 'Free' : legal.toCall}</strong>
-                  </div>
-                  <div className="intel-pill">
-                    <span>Min raise</span>
-                    <strong>{canRaise ? legal.minRaise : '-'}</strong>
-                  </div>
-                  <div className="intel-pill">
-                    <span>Hero stack</span>
-                    <strong>{hero.stack}</strong>
-                  </div>
-                </div>
-
-                <div className="primary-actions">
-                  <button type="button" className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
-                    Fold
-                  </button>
-                  <button
-                    type="button"
-                    className={`neutral ${legal.canCheck ? 'soft' : ''}`}
-                    disabled={!!state.summary || processing}
-                    onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
-                  >
-                    {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
-                  </button>
-                  <button type="button" className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
-                    Raise To {selectedBet}
-                  </button>
-                  <button type="button" className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
-                    All-in
-                  </button>
-                </div>
-
-                <div className="sizing-controls compact">
-                  <div className="slider-row">
-                    <label htmlFor="raise-size-slider">
-                      <span>Raise size</span>
-                      <strong>{selectedBet}</strong>
-                    </label>
-                    <input
-                      id="raise-size-slider"
-                      type="range"
-                      min={legal.minRaise}
-                      max={Math.max(legal.minRaise, legal.max)}
-                      value={selectedBet}
-                      onChange={(event) => setBetAmount(Number(event.target.value))}
-                      disabled={!canRaise || processing}
-                    />
-                  </div>
-                  <div className="presets">
-                    {sizingPresets.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        disabled={preset.disabled}
-                        onClick={() => setBetAmount(clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max)))}
-                        title="Set a quick sizing."
-                      >
-                        <span>{preset.label}</span>
-                        <strong>{preset.label === 'All-in' ? legal.max : clamp(preset.amount, legal.minRaise, Math.max(legal.minRaise, legal.max))}</strong>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            </section>
-          </section>
-
-          <aside className="utility-rail">
-            <section className="utility-hero-card">
-              <div>
-                <p className="panel-kicker">Active Room</p>
-                <h3>{strategyModeLabel[strategyMode]}</h3>
-              </div>
-              <p className="compact-copy">{strategyModeCaption[strategyMode]}</p>
-            </section>
-
-            <ExpandableSidePanel
-              kicker="Current Room Policy"
-              title={strategyModeLabel[strategyMode]}
-              summary={strategyMode === 'exploit' ? 'Exploit adjustments live' : 'Baseline discipline live'}
-              open={openPanel === 'room'}
-              onToggle={() => toggleUtilityPanel('room')}
-              action={<button type="button" className="quiet-button" onClick={() => setShowHelp(true)}>Guide</button>}
-            >
-              <p className="compact-copy">{strategyModeCaption[strategyMode]}</p>
-              <div className="room-policy-points">
-                <span>{strategyMode === 'exploit' ? 'Lean into leaks.' : 'Start balanced.'}</span>
-                <span>{strategyMode === 'exploit' ? 'Value thinner versus callers.' : 'Protect your ranges.'}</span>
-                <span>{strategyMode === 'exploit' ? 'Pressure over-folders.' : 'Add pressure selectively.'}</span>
-              </div>
-            </ExpandableSidePanel>
-
-            <ExpandableSidePanel
-              kicker="Hand Recap"
-              title={state.summary ? 'Latest hand ready' : 'Waiting on next hand'}
-              summary={state.summary ? `${state.summary.resultBb.toFixed(1)} bb` : 'No recap yet'}
-              open={openPanel === 'recap'}
-              onToggle={() => toggleUtilityPanel('recap')}
-            >
-              <HandRecapPanel
-                summary={state.summary}
-                ratingTitle={state.summary ? ratingHelp[state.summary.rating] : undefined}
-                showWhy={showWhy}
-                onToggleWhy={() => setShowWhy((value) => !value)}
-                onOpenReplay={() => setMode('replay')}
-              />
-            </ExpandableSidePanel>
-
-            <section className="drawer-trigger-card">
-              <div>
-                <p className="panel-kicker">Opponent Classes</p>
-                <h3>{liveVillains.length} seats tagged</h3>
-              </div>
-              <p className="compact-copy">Open the player drawer for archetypes without crowding the felt.</p>
-              <button type="button" className="neutral" onClick={() => setShowOpponentDrawer(true)}>
-                Open Opponent Drawer
-              </button>
-            </section>
-
-            <ExpandableSidePanel
-              kicker="Session Analytics"
-              title="Study trends"
-              summary={`${sessionHighlights.hands} hands | ${state.stats.winLossBb.toFixed(1)} bb`}
-              open={openPanel === 'analytics'}
-              onToggle={() => toggleUtilityPanel('analytics')}
-              action={
-                <button type="button" className="quiet-button" onClick={() => setShowDebug((value) => !value)}>
-                  {showDebug ? 'Hide debug' : 'Show debug'}
-                </button>
-              }
-            >
-              <div className="stats-grid compact-grid">
-                <div className="stat-card">
-                  <span>Hands</span>
-                  <strong>{sessionHighlights.hands}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Net</span>
-                  <strong>{state.stats.winLossBb.toFixed(1)} bb</strong>
-                </div>
-                <div className="stat-card">
-                  <span>VPIP</span>
-                  <strong>{sessionHighlights.vpip}%</strong>
-                </div>
-                <div className="stat-card">
-                  <span>PFR</span>
-                  <strong>{sessionHighlights.pfr}%</strong>
-                </div>
-                <div className="stat-card">
-                  <span>WTSD</span>
-                  <strong>{sessionHighlights.wtsd}%</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Agg</span>
-                  <strong>{sessionHighlights.aggression}%</strong>
-                </div>
-              </div>
-
-              <div className="trend-grid">
-                <div className="trend-card">
-                  <span>Best</span>
-                  <strong>{sessionHighlights.biggestWin} bb</strong>
-                </div>
-                <div className="trend-card">
-                  <span>Worst</span>
-                  <strong>{sessionHighlights.biggestSetback} bb</strong>
-                </div>
-              </div>
-
-              <div className="leak-card">
-                <h4>Pressure points</h4>
-                {sessionHighlights.leaks.length > 0 ? (
-                  <ul className="stats-list compact-list">
-                    {sessionHighlights.leaks.slice(0, 3).map(([label, count]) => (
-                      <li key={label}>{label}: {count}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="compact-copy">No recurring cluster yet.</p>
-                )}
-              </div>
-
-              {showDebug && state.botDebug && (
-                <div className="debug-panel">
-                  <h4>Bot Debug</h4>
-                  <div>Archetype: {state.botDebug.archetype}</div>
-                  <div>Mode: {state.botDebug.mode}</div>
-                  <div>Bucket: {state.botDebug.bucket}</div>
-                  <div>Texture: {state.botDebug.texture}</div>
-                  {state.botDebug.adjustments.length > 0 && <div>Adjustments: {state.botDebug.adjustments.join(' | ')}</div>}
-                  <div>Reason: {state.botDebug.reason}</div>
-                </div>
-              )}
-            </ExpandableSidePanel>
-          </aside>
+          <UtilityRail
+            strategyMode={strategyMode}
+            strategyModeLabel={strategyModeLabel}
+            strategyModeCaption={strategyModeCaption}
+            openPanel={openPanel}
+            toggleUtilityPanel={toggleUtilityPanel}
+            setShowHelp={setShowHelp}
+            state={state}
+            showWhy={showWhy}
+            setShowWhy={setShowWhy}
+            setMode={setMode}
+            liveVillains={liveVillains}
+            setShowOpponentDrawer={setShowOpponentDrawer}
+            sessionHighlights={sessionHighlights}
+            showDebug={showDebug}
+            setShowDebug={setShowDebug}
+            ratingHelp={ratingHelp}
+          />
         </div>
       )}
 
       {mode === 'replay' && (
-        <section className="replay-shell">
-          <div className="replay-header">
-            <div>
-              <p className="panel-kicker">Replay Last Hand</p>
-              <h2>Street-by-street review</h2>
-              <p className="tagline">{replayGuide.body}</p>
-            </div>
-            <div className="replay-meta">
-              <CompactBadge>{strategyModeLabel[strategyMode]}</CompactBadge>
-              <button type="button" className="neutral" onClick={() => setMode('full-ring')} title={modeTooltips['full-ring']}>
-                Back To Table
-              </button>
-            </div>
-          </div>
-
-          {replayActions.length === 0 ? (
-            <p className="compact-copy">No hand history yet. Play one hand at the table, then return here.</p>
-          ) : (
-            <>
-              <div className="replay-stage">
-                <div className="replay-stage-top">
-                  <div className="replay-overview">
-                    <span>Step {replayStep + 1} of {replayActions.length}</span>
-                    <strong>{currentReplay?.street}</strong>
-                    <p>{currentReplay?.who} {currentReplay?.did}</p>
-                  </div>
-                  <div className="replay-progress">
-                    {replayActions.map((step, index) => (
-                      <button
-                        key={`${step.street}-marker-${index}`}
-                        type="button"
-                        className={`replay-progress-stop ${index === replayStep ? 'active' : ''}`}
-                        onClick={() => setReplayStep(index)}
-                        title={`${step.street} - ${step.who} ${step.did}`}
-                      >
-                        <span>{index + 1}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {currentReplay && (
-                  <div className="replay-focus">
-                    <div className="replay-focus-card">
-                      <span className="replay-label">Pot after action</span>
-                      <strong>{currentReplay.potAfter}</strong>
-                    </div>
-                    <div className="replay-focus-card">
-                      <span className="replay-label">Action taken</span>
-                      <strong>{currentReplay.did}</strong>
-                    </div>
-                    <div className="replay-focus-card wide">
-                      <span className="replay-label">Key takeaway</span>
-                      <p>{currentReplay.interpretation}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <ReplayTimeline steps={replayActions} replayStep={replayStep} onStepChange={setReplayStep} />
-
-              <div className="replay-controls">
-                <button type="button" onClick={() => setReplayStep((value) => Math.max(0, value - 1))}>Previous</button>
-                <button type="button" onClick={() => setReplayStep((value) => Math.min(replayActions.length - 1, value + 1))}>Next</button>
-              </div>
-            </>
-          )}
-        </section>
+        <ReplayView
+          replayGuideBody={replayGuide.body}
+          strategyMode={strategyMode}
+          strategyModeLabel={strategyModeLabel}
+          setMode={setMode}
+          modeTooltips={modeTooltips}
+          replayActions={replayActions}
+          replayStep={replayStep}
+          setReplayStep={setReplayStep}
+          currentReplay={currentReplay}
+        />
       )}
 
       {showOpponentDrawer && (

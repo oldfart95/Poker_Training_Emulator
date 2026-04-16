@@ -67,7 +67,9 @@ export const TableStatusStrip = ({
             </span>
             <span className="status-affordance">{isOpen ? 'Hide' : 'More'}</span>
           </button>
-          {isOpen && <p className="status-detail">{card.detail}</p>}
+          <div className={`status-detail-wrap ${isOpen ? 'open' : ''}`} aria-hidden={!isOpen}>
+            <p className="status-detail">{card.detail}</p>
+          </div>
         </article>
       );
     })}
@@ -217,16 +219,16 @@ export const HintPopover = ({
     <button type="button" className="neutral" onClick={onToggle}>
       {visible ? 'Hide Hint' : 'Hint'}
     </button>
-    {visible && (
-      <div className="hint-popover">
-        <strong>Coach nudge</strong>
-        <p>{quick}</p>
-        <button type="button" className="quiet-button" onClick={onToggleExpanded}>
-          {expanded ? 'Hide detail' : 'Study note'}
-        </button>
-        {expanded && <p className="hint-detail">{detail}</p>}
+    <div className={`hint-popover ${visible ? 'open' : ''}`} aria-hidden={!visible}>
+      <strong>Coach nudge</strong>
+      <p>{quick}</p>
+      <button type="button" className="quiet-button" onClick={onToggleExpanded}>
+        {expanded ? 'Hide detail' : 'Study note'}
+      </button>
+      <div className={`hint-detail-wrap ${expanded ? 'open' : ''}`} aria-hidden={!expanded}>
+        <p className="hint-detail">{detail}</p>
       </div>
-    )}
+    </div>
   </div>
 );
 
@@ -262,7 +264,7 @@ export const ExpandableSidePanel = ({
       <span className="status-affordance">{open ? 'Hide' : 'Open'}</span>
     </button>
     {action && <div className="utility-panel-action">{action}</div>}
-    {open && <div className="utility-panel-body">{children}</div>}
+    <div className={`utility-panel-body ${open ? 'open' : ''}`} aria-hidden={!open}>{children}</div>
   </section>
 );
 
