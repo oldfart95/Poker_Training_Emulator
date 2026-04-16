@@ -7,37 +7,43 @@ import { formatCard } from './engine/deck';
 import { GameState } from './engine/gameEngine';
 import { Mode } from './engine/types';
 import { PaceMode, jitterInRange, paceProfiles, wait } from './presentation/pacing';
-import { nextDrillSpot } from './training/drills';
 import { formatReplaySteps } from './training/replay';
-import { BlindDefenseContext, CBetContext, evaluateBlindDefense, evaluateCBet, evaluatePreflop, PreflopContext, TrainingAction, TrainingFeedback } from './training/scoring';
 import { StrategyMode } from './strategy/types';
 import { helpSections, paceHelp, ratingHelp, strategyModeHelp } from './hints/contextualHelp';
 import { generateSpotHint } from './hints/hintGenerator';
-import { LIABILITY_DISCLAIMER_DISMISS_KEY, ONBOARDING_DISMISS_KEY, trainerInstructions, welcomeChecklist } from './hints/onboardingText';
+import { LIABILITY_DISCLAIMER_DISMISS_KEY, ONBOARDING_DISMISS_KEY, replayGuide, welcomeChecklist } from './hints/onboardingText';
 
 const modeLabel: Record<Mode, string> = {
-  'full-ring': 'Full Ring Loop',
-  'preflop-trainer': 'Preflop Trainer',
-  'cbet-trainer': 'C-Bet Trainer',
-  'blind-defense': 'Blind Defense Trainer',
+  'full-ring': 'Table Practice',
   replay: 'Replay Last Hand'
 };
 
 const seatClass = ['top', 'top-right', 'bottom-right', 'bottom', 'bottom-left', 'top-left'];
 const streetMeta = {
-  preflop: { icon: '◈', label: 'Preflop' },
-  flop: { icon: '◉', label: 'Flop' },
-  turn: { icon: '◎', label: 'Turn' },
-  river: { icon: '✦', label: 'River' },
-  showdown: { icon: '◆', label: 'Showdown' }
+  preflop: { icon: 'P', label: 'Preflop' },
+  flop: { icon: 'F', label: 'Flop' },
+  turn: { icon: 'T', label: 'Turn' },
+  river: { icon: 'R', label: 'River' },
+  showdown: { icon: 'S', label: 'Showdown' }
 } as const;
-const strategyModeLabel: Record<StrategyMode, string> = { exploit: 'Exploit Mode', blueprint: 'Blueprint Mode' };
+const strategyModeLabel: Record<StrategyMode, string> = {
+  exploit: 'Adaptive Pressure',
+  blueprint: 'Sound Fundamentals'
+};
 const modeTooltips: Record<Mode, string> = {
-  'full-ring': 'Play full hands from deal to showdown and review recap.',
-  'preflop-trainer': 'Rapid preflop reps: opening, calling, folding, and 3-betting.',
-  'cbet-trainer': 'Practice flop continuation betting decisions.',
-  'blind-defense': 'Practice blind responses versus late-position opens.',
-  replay: 'Replay your most recent hand step by step.'
+  'full-ring': 'Play full hands at the practice table with hints, recap, and session analytics.',
+  replay: 'Review the most recent hand street by street with action reads.'
+};
+const strategyModeCaption: Record<StrategyMode, string> = {
+  exploit: 'Leans into player leaks with practical pressure and thinner value where the room gives it up.',
+  blueprint: 'Anchors decisions to balanced baseline habits and disciplined range construction.'
+};
+const archetypeDescriptors: Record<string, string> = {
+  Nit: 'Patient, tight, value-heavy',
+  TAG: 'Disciplined reg, steady pressure',
+  LAG: 'Active opener, wide pressure',
+  'Calling Station': 'Sticky caller, under-folds',
+  Maniac: 'Chaotic pressure, over-bluffs'
 };
 
 const ChipStack = ({ amount }: { amount: number }) => <span className="chip-stack">{amount}</span>;
@@ -45,22 +51,19 @@ const ChipStack = ({ amount }: { amount: number }) => <span className="chip-stac
 const PokerCard = ({ value, hidden = false }: { value?: string; hidden?: boolean }) => {
   const rank = value ? value.slice(0, -1) : '';
   const suit = value ? value.slice(-1) : '';
-  const suitTone = suit === '♥' || suit === '♦' ? 'red' : 'black';
+  const suitTone = suit === '\u2665' || suit === '\u2666' ? 'red' : 'black';
   return (
     <span className={`poker-card ${hidden ? 'back' : ''} ${suitTone}`}>
-      {hidden ? <span>♦</span> : <><strong>{rank}</strong><em>{suit}</em></>}
+      {hidden ? <span>{'\u2666'}</span> : <><strong>{rank}</strong><em>{suit}</em></>}
     </span>
   );
 };
 
-const verdictTone = (verdict?: TrainingFeedback['verdict']) => {
-  if (!verdict) return 'neutral';
-  if (verdict === 'Best') return 'best';
-  if (verdict === 'Good') return 'good';
-  if (verdict === 'Okay') return 'okay';
-  if (verdict === 'Mistake') return 'mistake';
-  return 'punt';
-};
+const formatStatPercent = (count: number, opportunities: number) => (
+  opportunities ? ((count / opportunities) * 100).toFixed(1) : '0.0'
+);
+
+const formatPlayerRead = (profile?: string) => archetypeDescriptors[profile ?? ''] ?? 'Balanced regular';
 
 export default function App() {
   const storedPace = localStorage.getItem('ppp:pace');
@@ -73,13 +76,7 @@ export default function App() {
   const [betAmount, setBetAmount] = useState(250);
   const [showWhy, setShowWhy] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [seedMode, setSeedMode] = useState(false);
-  const [drillSeed, setDrillSeed] = useState(20260413);
-  const [drillIndex, setDrillIndex] = useState(0);
-  const [drill, setDrill] = useState(() => nextDrillSpot('preflop-trainer'));
-  const [feedback, setFeedback] = useState<TrainingFeedback | null>(null);
-  const [trainingScore, setTrainingScore] = useState(0);
-  const [paceMode, setPaceMode] = useState<PaceMode>(initialPace);
+  const [paceMode, setPaceMode] = useState(initialPace);
   const [activeSeat, setActiveSeat] = useState<number | null>(null);
   const [thinkingSeat, setThinkingSeat] = useState<number | null>(null);
   const [seatBadges, setSeatBadges] = useState<Record<number, string>>({});
@@ -93,9 +90,41 @@ export default function App() {
 
   const pace = paceProfiles[paceMode];
 
-  const replayActions = useMemo(() => formatReplaySteps(state.summary, state.players, strategyMode), [state.summary, state.players, strategyMode]);
-  const buildNextDrill = (targetMode: Mode, indexOffset = 0) =>
-    nextDrillSpot(targetMode, seedMode ? { seed: drillSeed, index: drillIndex + indexOffset } : undefined);
+  const replayActions = useMemo(
+    () => formatReplaySteps(state.summary, state.players, strategyMode),
+    [state.summary, state.players, strategyMode]
+  );
+
+  const sessionHighlights = useMemo(() => {
+    const stats = state.stats;
+    const leaks = Object.entries(stats.mistakes)
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    return {
+      hands: stats.hands,
+      vpip: formatStatPercent(stats.vpipCount, stats.vpipOpportunities),
+      pfr: formatStatPercent(stats.pfrCount, stats.pfrOpportunities),
+      wtsd: formatStatPercent(stats.wtsdCount, stats.hands),
+      aggression: formatStatPercent(
+        stats.pfrCount + stats.threeBetCount + stats.cBetCount,
+        stats.pfrOpportunities + stats.threeBetOpportunities + stats.cBetOpportunities
+      ),
+      biggestWin: stats.biggestWinBb.toFixed(1),
+      biggestSetback: stats.biggestPuntBb.toFixed(1),
+      leaks
+    };
+  }, [state.stats]);
+
+  const liveVillains = useMemo(
+    () => state.players.filter((player) => !player.isHero).map((player) => ({
+      seat: player.seat,
+      name: player.name,
+      profile: player.profile ?? 'Regular',
+      note: formatPlayerRead(player.profile)
+    })),
+    [state.players]
+  );
 
   useEffect(() => {
     localStorage.setItem('ppp:pace', paceMode);
@@ -103,20 +132,14 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (mode === 'replay') {
-        if (event.key === 'ArrowLeft') setReplayStep((s) => Math.max(0, s - 1));
-        if (event.key === 'ArrowRight') setReplayStep((s) => Math.min(replayActions.length - 1, s + 1));
-      }
-      if (mode !== 'full-ring' && mode !== 'replay' && event.key.toLowerCase() === 'n') {
-        const next = buildNextDrill(mode, 1);
-        setDrill(next);
-        if (seedMode) setDrillIndex((v) => v + 1);
-        setFeedback(null);
-      }
+      if (mode !== 'replay') return;
+      if (event.key === 'ArrowLeft') setReplayStep((s) => Math.max(0, s - 1));
+      if (event.key === 'ArrowRight') setReplayStep((s) => Math.min(replayActions.length - 1, s + 1));
     };
+
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, replayActions.length, seedMode, drillSeed, drillIndex]);
+  }, [mode, replayActions.length]);
 
   const runPresentationQueue = async (start: GameState) => {
     let current = structuredClone(start);
@@ -145,9 +168,15 @@ export default function App() {
         canCheck: legal.canCheck,
         position: player.position as Position,
         playersInHand: current.players.filter((p) => !p.folded).length,
-        wasPreflopAggressor: current.actions.some((a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')),
-        facingThreeBet: current.street === 'preflop' && current.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
-        hasBetThisStreet: current.actions.some((a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')),
+        wasPreflopAggressor: current.actions.some(
+          (a) => a.street === 'preflop' && a.seat === seat && (a.type === 'raise' || a.type === 'all-in')
+        ),
+        facingThreeBet:
+          current.street === 'preflop' &&
+          current.actions.filter((a) => (a.type === 'raise' || a.type === 'all-in') && a.street === 'preflop').length >= 2,
+        hasBetThisStreet: current.actions.some(
+          (a) => a.seat === seat && a.street === current.street && (a.type === 'raise' || a.type === 'all-in' || a.type === 'bet')
+        ),
         strategyMode
       });
 
@@ -155,6 +184,7 @@ export default function App() {
       current = applyAction(current, seat, decision.type, decision.amount);
       setState(current);
       setSeatBadges((prev) => ({ ...prev, [seat]: decision.type.toUpperCase() }));
+
       if (decision.amount > 0) {
         setPotPulse(true);
         window.setTimeout(() => setPotPulse(false), jitterInRange(pace.chipMs));
@@ -193,8 +223,7 @@ export default function App() {
       board: state.board,
       heroPosition: hero.position,
       opponentArchetype: liveVillain?.profile,
-      heroAggressor,
-      trainerType: mode !== 'full-ring' && mode !== 'replay' ? mode : undefined
+      heroAggressor
     });
   }, [state.players, state.actions, state.street, state.board, mode, strategyMode]);
 
@@ -210,12 +239,12 @@ export default function App() {
 
   const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
     if (processing) return;
-    let s = applyAction(state, 0, type, amount);
-    setState(s);
+    const next = applyAction(state, 0, type, amount);
+    setState(next);
     setSeatBadges((prev) => ({ ...prev, 0: type.toUpperCase() }));
     setReplayStep(0);
-    if (!s.summary) {
-      await runPresentationQueue(s);
+    if (!next.summary) {
+      await runPresentationQueue(next);
     }
   };
 
@@ -225,6 +254,9 @@ export default function App() {
     setState(next);
     setSeatBadges({});
     setReplayStep(0);
+    setShowHint(false);
+    setShowHintMore(false);
+    setShowWhy(false);
     await wait(jitterInRange(pace.dealMs));
     await wait(jitterInRange(pace.dealMs));
     if (!next.waitingForHero) {
@@ -232,62 +264,62 @@ export default function App() {
     }
   };
 
-  const handleMode = (m: Mode) => {
-    setMode(m);
-    if (m === 'full-ring') return;
-    if (m === 'replay') return;
-    setDrillIndex(0);
-    setDrill(buildNextDrill(m, 0));
-    setFeedback(null);
-  };
-
-  const scoreDrill = (action: TrainingAction) => {
-    if (!drill) return;
-    let result: TrainingFeedback;
-
-    if (drill.category === 'preflop-trainer') {
-      result = evaluatePreflop(drill.heroCards, action, { ...(drill.context as PreflopContext), strategyMode, opponentProfile: 'Calling Station' });
-    } else if (drill.category === 'cbet-trainer') {
-      result = evaluateCBet(drill.heroCards, drill.board ?? [], action, { ...(drill.context as CBetContext), strategyMode, opponentProfile: 'Nit' });
-    } else {
-      result = evaluateBlindDefense(drill.heroCards, action, { ...(drill.context as BlindDefenseContext), strategyMode, opponentProfile: 'Maniac' });
-    }
-
-    setFeedback(result);
-    setTrainingScore((prev) => prev + result.scoreDelta);
-  };
+  const currentReplay = replayActions[replayStep];
 
   return (
     <div className="app">
       <header className="top-bar">
-        <div>
-          <h1>Pocket Pixel Poker</h1>
-          <p className="tagline">Cozy pixel cardroom • serious hand study</p>
+        <div className="brand-block">
+          <p className="eyebrow">Pocket Pixel Poker</p>
+          <h1>Premium Table Practice</h1>
+          <p className="tagline">A serious digital cardroom for hand reading, disciplined decisions, replay study, and opponent-specific adjustment.</p>
         </div>
-        <div className="menu">
+
+        <div className="menu mode-menu">
           {(Object.keys(modeLabel) as Mode[]).map((m) => (
-            <button key={m} className={mode === m ? 'active' : ''} onClick={() => handleMode(m)} title={modeTooltips[m]}>
+            <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)} title={modeTooltips[m]}>
               {modeLabel[m]}
             </button>
           ))}
         </div>
-        <div className="menu">
+
+        <div className="menu strategy-menu">
           {(Object.keys(strategyModeLabel) as StrategyMode[]).map((m) => (
             <button key={m} className={strategyMode === m ? 'active' : ''} onClick={() => setStrategyMode(m)} title={strategyModeHelp[m]}>
               {strategyModeLabel[m]}
             </button>
           ))}
-          <button className="neutral" onClick={() => setShowHelp(true)} title="Open a short guide for modes, pacing, recap ratings, and hints.">
-            ? Help
+          <button className="neutral" onClick={() => setShowHelp(true)} title="Open the room guide for pacing, hints, replay, and analytics.">
+            Room Guide
           </button>
         </div>
       </header>
+
+      <section className="hero-strip">
+        <div className="hero-copy">
+          <span className="hero-kicker">Live Table Environment</span>
+          <strong>{strategyModeLabel[strategyMode]}</strong>
+          <p>{strategyModeCaption[strategyMode]}</p>
+        </div>
+        <div className="hero-copy">
+          <span className="hero-kicker">Table Coach</span>
+          <strong>Hints stay optional</strong>
+          <p>Use quick nudges in the moment, then open the deeper note only when you want study context.</p>
+        </div>
+        <div className="hero-copy">
+          <span className="hero-kicker">Hand Review</span>
+          <strong>Replay remains one click away</strong>
+          <p>Play naturally, then step through the line with clearer street markers, reads, and pot tracking.</p>
+        </div>
+      </section>
 
       {mode === 'full-ring' && (
         <div className="layout">
           <section className="table-shell">
             <div className={`table-surface street-${state.street}`}>
               <div className="table-vignette" />
+              <div className="room-light room-light-left" />
+              <div className="room-light room-light-right" />
               <div className={`pot-plaque ${potPulse ? 'pot-pulse' : ''}`}>
                 <span className="label">Main Pot</span>
                 <div key={`${state.handId}-${state.pot}`} className="pot-pop">
@@ -299,36 +331,42 @@ export default function App() {
                 <span>{streetMeta[state.street].icon}</span> {streetMeta[state.street].label}
               </div>
               <div className={`board-lane ${streetAnimTick ? 'street-transition' : ''}`} key={`${state.handId}-${state.board.length}-${streetAnimTick}`}>
-                {state.board.length === 0 && <span className="street-hint">Waiting for flop...</span>}
-                {state.board.map((c, i) => (
-                  <PokerCard key={`${c.rank}${c.suit}${i}`} value={formatCard(c)} />
+                {state.board.length === 0 && <span className="street-hint">Waiting for the next street...</span>}
+                {state.board.map((card, index) => (
+                  <PokerCard key={`${card.rank}${card.suit}${index}`} value={formatCard(card)} />
                 ))}
               </div>
 
               <div className="seats-ring">
-                {state.players.map((p, index) => (
+                {state.players.map((player, index) => (
                   <article
-                    className={`seat-panel ${seatClass[index]} ${p.isHero ? 'hero' : ''} ${p.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''}`}
-                    key={p.id}
+                    className={`seat-panel ${seatClass[index]} ${player.isHero ? 'hero' : ''} ${player.folded ? 'folded' : ''} ${(activeSeat === index || (state.currentSeat === index && !state.summary)) ? 'active-turn' : ''}`}
+                    key={player.id}
                   >
                     <div className="seat-head">
-                      <strong>{p.name}</strong>
-                      <span className="badge">{p.position}</span>
+                      <div>
+                        <strong>{player.name}</strong>
+                        <div className="seat-subhead">
+                          <span className="badge">{player.position}</span>
+                          {!player.isHero && player.profile && <span className="profile-pill">{player.profile}</span>}
+                        </div>
+                      </div>
+                      {!player.isHero && player.profile && <span className="seat-read">{formatPlayerRead(player.profile)}</span>}
                     </div>
                     <div className="seat-stack">
-                      <ChipStack amount={p.stack} />
+                      <ChipStack amount={player.stack} />
                     </div>
                     <div className="seat-cards">
-                      {p.isHero
-                        ? p.holeCards.map((card, i) => <PokerCard key={`${p.id}-${i}`} value={formatCard(card)} />)
-                        : p.holeCards.length > 0 && (
+                      {player.isHero
+                        ? player.holeCards.map((card, i) => <PokerCard key={`${player.id}-${i}`} value={formatCard(card)} />)
+                        : player.holeCards.length > 0 && (
                             <>
                               <PokerCard hidden />
                               <PokerCard hidden />
                             </>
                           )}
                     </div>
-                    {thinkingSeat === index && <div className="thinking">Thinking…</div>}
+                    {thinkingSeat === index && <div className="thinking">Reading the spot...</div>}
                     {seatBadges[index] && !state.summary && (
                       <div key={`${state.handId}-${index}-${seatBadges[index]}`} className="action-badge">{seatBadges[index]}</div>
                     )}
@@ -340,22 +378,46 @@ export default function App() {
             <div className="action-dock">
               {showOnboarding && (
                 <div className="coach-card">
-                  <h4>Welcome to Pocket Pixel Poker</h4>
+                  <h4>Welcome to the room</h4>
                   <ul>
                     {welcomeChecklist.map((item) => <li key={item}>{item}</li>)}
                   </ul>
-                  <button className="neutral" onClick={dismissOnboarding}>Got it</button>
+                  <button className="neutral" onClick={dismissOnboarding}>Enter Table</button>
                 </div>
               )}
-              <div className="pace-row">
-                <label>Pace</label>
-                {(['Fast', 'Normal', 'Study'] as PaceMode[]).map((p) => (
-                  <button key={p} className={paceMode === p ? 'active' : ''} onClick={() => setPaceMode(p)} title={paceHelp[p]}>
-                    {p}
+
+              <div className="action-dock-top">
+                <div className="pace-row">
+                  <label>Table Pace</label>
+                  {(['Fast', 'Normal', 'Study'] as PaceMode[]).map((p) => (
+                    <button key={p} className={paceMode === p ? 'active' : ''} onClick={() => setPaceMode(p)} title={paceHelp[p]}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="hint-row">
+                  <button
+                    className="neutral"
+                    onClick={() => {
+                      setShowHint((value) => !value);
+                      setShowHintMore(false);
+                    }}
+                    title="Open a table-side coaching nudge for the current spot."
+                  >
+                    Coaching Hint
                   </button>
-                ))}
+                </div>
               </div>
-              <p className="microcopy">{state.summary ? 'Hand complete. Review recap, then deal the next hand when ready.' : (state.waitingForHero ? `Your turn (${state.players[0].position}). Choose your action.` : 'Table action is in progress. Watch ranges unfold.')}</p>
+
+              <p className="microcopy">
+                {state.summary
+                  ? 'Hand complete. Review the recap, then deal the next hand when you are ready.'
+                  : state.waitingForHero
+                    ? `Your action from ${state.players[0].position}. Stay grounded in stack depth, position, and the room profile across from you.`
+                    : 'Table action is unfolding. Watch how each archetype enters the pot and where pressure starts to build.'}
+              </p>
+
               <div className="primary-actions">
                 <button className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
                   Fold
@@ -374,81 +436,177 @@ export default function App() {
                   All-in
                 </button>
               </div>
-              <div className="hint-row">
-                <button className="neutral" onClick={() => { setShowHint((v) => !v); setShowHintMore(false); }} title="Quick coaching nudge for this exact spot.">
-                  Hint
-                </button>
-              </div>
+
               {showHint && (
                 <div className="hint-card">
-                  <p><strong>Quick Hint:</strong> {spotHint.quick}</p>
-                  <button className="neutral" onClick={() => setShowHintMore((v) => !v)}>{showHintMore ? 'Hide Details' : 'Explain More'}</button>
+                  <p><strong>Coach Nudge:</strong> {spotHint.quick}</p>
+                  <button className="neutral" onClick={() => setShowHintMore((value) => !value)}>
+                    {showHintMore ? 'Hide Study Note' : 'Open Study Note'}
+                  </button>
                   {showHintMore && <p>{spotHint.explainMore}</p>}
                 </div>
               )}
 
               <div className="sizing-controls">
                 <div className="slider-row">
-                  <label>Size: {Math.min(betAmount, Math.max(legal.minRaise, legal.max))}</label>
+                  <label>Selected size: {Math.min(betAmount, Math.max(legal.minRaise, legal.max))}</label>
                   <input
                     type="range"
                     min={legal.minRaise}
                     max={Math.max(legal.minRaise, legal.max)}
                     value={Math.min(betAmount, Math.max(legal.minRaise, legal.max))}
-                    onChange={(e) => setBetAmount(Number(e.target.value))}
+                    onChange={(event) => setBetAmount(Number(event.target.value))}
                   />
                 </div>
                 <div className="presets">
-                  {[0.25, 0.33, 0.5, 0.75, 1].map((s) => (
-                    <button key={s} onClick={() => setBetAmount(Math.round(state.pot * s))} title="Set your bet as a percentage of the current pot.">
-                      {Math.round(s * 100)}%
+                  {[0.25, 0.33, 0.5, 0.75, 1].map((size) => (
+                    <button key={size} onClick={() => setBetAmount(Math.round(state.pot * size))} title="Set your sizing as a percentage of the current pot.">
+                      {Math.round(size * 100)}%
                     </button>
                   ))}
                   <button onClick={() => setBetAmount(Math.round(2.5 * state.bb))}>2.5x</button>
                   <button onClick={() => setBetAmount(Math.round(3 * state.bb))}>3x</button>
                 </div>
               </div>
+
               <button className="deal-next" onClick={dealNextHand} disabled={processing}>
                 Deal Next Hand
               </button>
-              {!state.summary && <p className="microcopy">Need a fresh spot? Deal Next Hand resets the table instantly.</p>}
+              {!state.summary && <p className="microcopy">Need a fresh spot? A new hand keeps the room moving without dropping your session analytics.</p>}
             </div>
           </section>
 
           <aside className="study-panel">
-            <h3>Study Recap</h3>
-            <p className="tagline">Active strategy: <strong>{strategyModeLabel[strategyMode]}</strong></p>
-            {state.summary ? (
-              <div className="summary-block" key={state.summary.id}>
-                <div className="summary-line">{state.summary.heroCards.map(formatCard).join(' ')} • {state.summary.heroPosition}</div>
-                <div className="summary-line">Board: {state.summary.board.map(formatCard).join(' ') || '—'}</div>
-                <div className="summary-chipline">
-                  <span>Result</span>
-                  <strong>{state.summary.resultChips} chips ({state.summary.resultBb.toFixed(1)} bb)</strong>
+            <section className="panel-section">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-kicker">Current Room Policy</p>
+                  <h3>{strategyModeLabel[strategyMode]}</h3>
                 </div>
-                <div className="action-pins">
-                  {state.summary.actions.slice(0, 5).map((action, index) => (
-                    <span key={`${state.summary?.id}-${index}`}>{action.street.slice(0, 1).toUpperCase()} · {action.playerName} {action.type}</span>
-                  ))}
-                </div>
-                <div className="rating-pill" title={ratingHelp[state.summary.rating]}>Rating: {state.summary.rating}</div>
-                <p>{state.summary.feedback}</p>
-                <button className="neutral" onClick={() => setShowWhy((v) => !v)}>
-                  {showWhy ? 'Hide Why' : 'Why this line?'}
-                </button>
-                {showWhy && <p>{state.summary.why}</p>}
-                <p><em>Tighter:</em> {state.summary.tighter}</p>
-                <p><em>Aggressive:</em> {state.summary.aggressive}</p>
+                <button className="debug-toggle" onClick={() => setShowHelp(true)}>Room Guide</button>
               </div>
-            ) : (
-              <p className="coach-placeholder">No recap yet. Click <strong>Deal Next Hand</strong>, play the spot, then review rating + coach notes here.</p>
-            )}
-            <button className="debug-toggle" onClick={() => setShowHelp(true)}>Need help?</button>
+              <p className="tagline">{strategyModeCaption[strategyMode]}</p>
+            </section>
 
-            <div className="debug-wrap">
-              <button className="debug-toggle" onClick={() => setShowDebug((v) => !v)}>
-                {showDebug ? 'Hide Debug Tools' : 'Show Debug Tools'}
-              </button>
+            <section className="panel-section">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-kicker">Hand Recap</p>
+                  <h3>Study the last decision path</h3>
+                </div>
+                {state.summary && (
+                  <button className="neutral" onClick={() => setMode('replay')}>
+                    Open Replay
+                  </button>
+                )}
+              </div>
+              {state.summary ? (
+                <div className="summary-block" key={state.summary.id}>
+                  <div className="summary-line">{state.summary.heroCards.map(formatCard).join(' ')} | {state.summary.heroPosition}</div>
+                  <div className="summary-line">Board: {state.summary.board.map(formatCard).join(' ') || '-'}</div>
+                  <div className="summary-chipline">
+                    <span>Result</span>
+                    <strong>{state.summary.resultChips} chips ({state.summary.resultBb.toFixed(1)} bb)</strong>
+                  </div>
+                  <div className="action-pins">
+                    {state.summary.actions.slice(0, 6).map((action, index) => (
+                      <span key={`${state.summary!.id}-${index}`}>{action.street.slice(0, 1).toUpperCase()} | {action.playerName} {action.type}</span>
+                    ))}
+                  </div>
+                  <div className="rating-pill" title={ratingHelp[state.summary.rating]}>Room grade: {state.summary.rating}</div>
+                  <p>{state.summary.feedback}</p>
+                  <button className="neutral" onClick={() => setShowWhy((value) => !value)}>
+                    {showWhy ? 'Hide Breakdown' : 'Why this line?'}
+                  </button>
+                  {showWhy && <p>{state.summary.why}</p>}
+                  <p><em>Discipline note:</em> {state.summary.tighter}</p>
+                  <p><em>Pressure note:</em> {state.summary.aggressive}</p>
+                </div>
+              ) : (
+                <p className="coach-placeholder">No hand review yet. Deal a hand, play it naturally, then use the recap here to study the result.</p>
+              )}
+            </section>
+
+            <section className="panel-section">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-kicker">Opponent Classes</p>
+                  <h3>Recognizable room personalities</h3>
+                </div>
+              </div>
+              <div className="villain-grid">
+                {liveVillains.map((villain) => (
+                  <article key={villain.seat} className="villain-card">
+                    <strong>{villain.name}</strong>
+                    <span className="profile-pill">{villain.profile}</span>
+                    <p>{villain.note}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="panel-section">
+              <div className="panel-heading">
+                <div>
+                  <p className="panel-kicker">Session Analytics</p>
+                  <h3>Results that support study</h3>
+                </div>
+                <button className="debug-toggle" onClick={() => setShowDebug((value) => !value)}>
+                  {showDebug ? 'Hide Debug' : 'Show Debug'}
+                </button>
+              </div>
+
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span>Hands</span>
+                  <strong>{sessionHighlights.hands}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Net</span>
+                  <strong>{state.stats.winLossBb.toFixed(1)} bb</strong>
+                </div>
+                <div className="stat-card">
+                  <span>VPIP</span>
+                  <strong>{sessionHighlights.vpip}%</strong>
+                </div>
+                <div className="stat-card">
+                  <span>PFR</span>
+                  <strong>{sessionHighlights.pfr}%</strong>
+                </div>
+                <div className="stat-card">
+                  <span>WTSD</span>
+                  <strong>{sessionHighlights.wtsd}%</strong>
+                </div>
+                <div className="stat-card">
+                  <span>Aggression</span>
+                  <strong>{sessionHighlights.aggression}%</strong>
+                </div>
+              </div>
+
+              <div className="trend-grid">
+                <div className="trend-card">
+                  <span>Best hand</span>
+                  <strong>{sessionHighlights.biggestWin} bb</strong>
+                </div>
+                <div className="trend-card">
+                  <span>Largest setback</span>
+                  <strong>{sessionHighlights.biggestSetback} bb</strong>
+                </div>
+              </div>
+
+              <div className="leak-card">
+                <h4>Recurring pressure points</h4>
+                {sessionHighlights.leaks.length > 0 ? (
+                  <ul className="stats-list">
+                    {sessionHighlights.leaks.slice(0, 3).map(([label, count]) => (
+                      <li key={label}>{label}: {count}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="microcopy">No repeated leak cluster detected yet. Keep logging hands and the room will surface patterns.</p>
+                )}
+              </div>
+
               {showDebug && state.botDebug && (
                 <div className="debug-panel">
                   <h4>Bot Debug</h4>
@@ -459,112 +617,83 @@ export default function App() {
                   {state.botDebug.adjustments.length > 0 && <div>Adjustments: {state.botDebug.adjustments.join(' | ')}</div>}
                   <div>Reason: {state.botDebug.reason}</div>
                   <div className="debug-weights">
-                    {Object.entries(state.botDebug.weights).map(([k, v]) => (
-                      <span key={k}>{k}:{v.toFixed(2)} </span>
+                    {Object.entries(state.botDebug.weights).map(([key, value]) => (
+                      <span key={key}>{key}:{value.toFixed(2)}</span>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-
-            <h4>Session Stats</h4>
-            <ul className="stats-list">
-              <li>VPIP: {state.stats.vpipOpportunities ? ((state.stats.vpipCount / state.stats.vpipOpportunities) * 100).toFixed(1) : 0}%</li>
-              <li>PFR: {state.stats.pfrOpportunities ? ((state.stats.pfrCount / state.stats.pfrOpportunities) * 100).toFixed(1) : 0}%</li>
-              <li>Win/Loss: {state.stats.winLossBb.toFixed(1)} bb</li>
-              <li>WTSD: {state.stats.hands ? ((state.stats.wtsdCount / state.stats.hands) * 100).toFixed(1) : 0}%</li>
-            </ul>
+            </section>
           </aside>
         </div>
       )}
 
-      {mode !== 'full-ring' && mode !== 'replay' && drill && (
-        <section className="drill">
-          <h2>{modeLabel[mode]} · {strategyModeLabel[strategyMode]} · Score {trainingScore}</h2>
-          <div className="coach-placeholder">
-            <strong>{trainerInstructions[mode].title}:</strong> {trainerInstructions[mode].body}
-          </div>
-          <div className="drill-actions">
-            <button className={seedMode ? 'active' : ''} onClick={() => setSeedMode((v) => !v)}>
-              {seedMode ? 'Deterministic ON' : 'Deterministic OFF'}
-            </button>
-            <label>Seed</label>
-            <input type="number" value={drillSeed} onChange={(e) => setDrillSeed(Number(e.target.value) || 0)} />
-            {drill.seedTag && <span>Spot {drill.seedTag}</span>}
-          </div>
-          <p>{drill.prompt}</p>
-          <div>
-            Hero: {drill.heroCards.map(formatCard).join(' ')} {drill.board ? `| Board: ${drill.board.map(formatCard).join(' ')}` : ''}
-          </div>
-          <div className="drill-actions">
-            {drill.choices.map((c) => (
-              <button key={c} onClick={() => scoreDrill(c)}>{c.toUpperCase()}</button>
-            ))}
-            <button className="neutral" onClick={() => { setShowHint((v) => !v); setShowHintMore(false); }} title="Quick coaching nudge for this training spot.">
-              Hint
-            </button>
-            <button className="neutral" onClick={() => {
-              const next = buildNextDrill(mode, 1);
-              setDrill(next);
-              if (seedMode) setDrillIndex((v) => v + 1);
-              setFeedback(null);
-            }}>
-              Next Spot
-            </button>
-          </div>
-          <p>Coach note: {drill.note}</p>
-          {showHint && (
-            <div className="hint-card">
-              <p><strong>Quick Hint:</strong> {spotHint.quick}</p>
-              <button className="neutral" onClick={() => setShowHintMore((v) => !v)}>{showHintMore ? 'Hide Details' : 'Explain More'}</button>
-              {showHintMore && <p>{spotHint.explainMore}</p>}
-            </div>
-          )}
-          {feedback && (
-            <div className={`feedback-card ${verdictTone(feedback.verdict)}`}>
-              <div className="feedback-head">
-                <span className="verdict-badge">{strategyModeLabel[strategyMode]}</span>
-                <span className="verdict-badge">{feedback.verdict}</span>
-                <strong>{feedback.scoreDelta >= 0 ? '+' : ''}{feedback.scoreDelta}</strong>
-              </div>
-              {feedback.boardTexture && <p><strong>Board texture:</strong> {feedback.boardTexture}</p>}
-              {feedback.rangeAdvantage && <p><strong>Range edge:</strong> {feedback.rangeAdvantage}</p>}
-              <p><strong>Best action:</strong> {feedback.bestAction}</p>
-              <p><strong>Also okay:</strong> {feedback.acceptableAlternatives.join(', ') || '—'}</p>
-              <p><strong>EV band:</strong> {feedback.evBand} · <strong>Confidence:</strong> {feedback.confidence}</p>
-              <p><strong>Why:</strong> {feedback.shortExplanation}</p>
-              <p><strong>Coach note:</strong> {feedback.coachNote}</p>
-            </div>
-          )}
-        </section>
-      )}
-
       {mode === 'replay' && (
-        <section className="drill">
-          <h2>Replay Last Hand</h2>
-          <div className="coach-placeholder">
-            <strong>{trainerInstructions.replay.title}:</strong> {trainerInstructions.replay.body}
-          </div>
-          <p>Mode: {strategyModeLabel[strategyMode]}</p>
-          {replayActions.length === 0 && <p className="microcopy">No hand history yet. Play one hand in Full Ring Loop, then return here to study the action path.</p>}
-          <p>Step {replayStep + 1} / {Math.max(replayActions.length, 1)}</p>
-          {replayActions[replayStep] && (
-            <div className="feedback-card okay">
-              <p><strong>{replayActions[replayStep].street}</strong> · {replayActions[replayStep].who} {replayActions[replayStep].did}</p>
-              <p><strong>Pot after action:</strong> {replayActions[replayStep].potAfter}</p>
-              <p><strong>Interpretation:</strong> {replayActions[replayStep].interpretation}</p>
+        <section className="replay-shell">
+          <div className="replay-header">
+            <div>
+              <p className="panel-kicker">Replay Last Hand</p>
+              <h2>Street-by-street review</h2>
+              <p className="tagline">{replayGuide.body}</p>
             </div>
+            <div className="replay-meta">
+              <span className="profile-pill">{strategyModeLabel[strategyMode]}</span>
+              <button className="neutral" onClick={() => setMode('full-ring')}>Back To Table</button>
+            </div>
+          </div>
+
+          {replayActions.length === 0 ? (
+            <p className="coach-placeholder">No hand history yet. Play one full hand at the table, then return here to review the action path.</p>
+          ) : (
+            <>
+              <div className="replay-stage">
+                <div className="replay-overview">
+                  <span>Step {replayStep + 1} of {replayActions.length}</span>
+                  <strong>{currentReplay?.street}</strong>
+                  <p>{currentReplay?.who} {currentReplay?.did}</p>
+                </div>
+                {currentReplay && (
+                  <div className="replay-focus">
+                    <div className="replay-focus-card">
+                      <span className="replay-label">Pot after action</span>
+                      <strong>{currentReplay.potAfter}</strong>
+                    </div>
+                    <div className="replay-focus-card wide">
+                      <span className="replay-label">Interpretation</span>
+                      <p>{currentReplay.interpretation}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="timeline">
+                {replayActions.map((step, index) => (
+                  <button
+                    key={`${step.street}-${step.who}-${index}`}
+                    className={`timeline-step ${index === replayStep ? 'active' : ''}`}
+                    onClick={() => setReplayStep(index)}
+                  >
+                    <span>{step.street}</span>
+                    <strong>{step.who}</strong>
+                    <em>{step.did}</em>
+                  </button>
+                ))}
+              </div>
+
+              <div className="replay-controls">
+                <button onClick={() => setReplayStep((value) => Math.max(0, value - 1))}>Previous</button>
+                <button onClick={() => setReplayStep((value) => Math.min(replayActions.length - 1, value + 1))}>Next</button>
+              </div>
+            </>
           )}
-          <button onClick={() => setReplayStep((s) => Math.max(0, s - 1))}>Prev</button>
-          <button onClick={() => setReplayStep((s) => Math.min(replayActions.length - 1, s + 1))}>Next</button>
         </section>
       )}
 
       {showHelp && (
         <div className="modal-backdrop" onClick={() => setShowHelp(false)}>
-          <section className="help-modal" onClick={(e) => e.stopPropagation()}>
+          <section className="help-modal" onClick={(event) => event.stopPropagation()}>
             <div className="feedback-head">
-              <h3>Pocket Pixel Poker Help</h3>
+              <h3>Pocket Pixel Poker Room Guide</h3>
               <button className="neutral" onClick={() => setShowHelp(false)}>Close</button>
             </div>
             {helpSections.map((section) => (
@@ -582,18 +711,17 @@ export default function App() {
       {showLiabilityDisclaimer && (
         <div className="modal-backdrop">
           <section className="help-modal disclaimer-modal">
-            <h3>!!!DISCLAIMER!!!</h3>
+            <h3>Training Use Notice</h3>
             <p>
-              Pocket Pixel Poker is a training simulator for educational use only. It does not provide legal advice or authorization
-              to violate any rules, laws, platform terms, or game integrity policies.
+              Pocket Pixel Poker is a practice environment for studying hand contexts, opponent classes, and disciplined decision-making.
+              It does not authorize violating any law, platform rule, or integrity policy.
             </p>
             <p>
-              <strong>Exploit Mode</strong> means adapting to weak player tendencies (for example over-folding, over-calling, or
-              predictable sizing) to improve strategy study. It is about <strong>pushing weak players strategically</strong>, not
-              cheating.
+              <strong>Adaptive Pressure</strong> means adjusting to visible weaknesses like over-folding, over-calling, or unstable sizing patterns.
+              It is a study lens for exploitative poker strategy, not cheating.
             </p>
             <p>
-              You are solely responsible for how you use this software. By continuing, you agree to use it ethically and lawfully.
+              You remain responsible for using the software ethically and lawfully.
             </p>
             <button className="accent" onClick={acceptLiabilityDisclaimer}>I understand</button>
           </section>

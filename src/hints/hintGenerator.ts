@@ -14,19 +14,12 @@ interface HintContext {
   heroPosition?: string;
   opponentArchetype?: Archetype | string;
   heroAggressor?: boolean;
-  trainerType?: Exclude<Mode, 'full-ring' | 'replay'>;
 }
 
 export interface SpotHint {
   quick: string;
   explainMore: string;
 }
-
-const trainerLead: Record<Exclude<Mode, 'full-ring' | 'replay'>, string> = {
-  'preflop-trainer': 'Training focus: choose Fold / Open / 3-bet / Call with position discipline.',
-  'cbet-trainer': 'Training focus: choose check, small c-bet, or large c-bet based on texture and range edge.',
-  'blind-defense': 'Training focus: defend selectively from the blinds versus late opens.'
-};
 
 export const generateSpotHint = (ctx: HintContext): SpotHint => {
   const boardBucket = classifyBoardBucket(ctx.board);
@@ -45,15 +38,11 @@ export const generateSpotHint = (ctx: HintContext): SpotHint => {
 
   const detailParts = [
     modeHint.detail,
-    `Context: ${ctx.street.toUpperCase()} • Hand bucket: ${handBucket.replace(/-/g, ' ')}${ctx.board.length ? ` • Board: ${boardBucket.replace(/-/g, ' ')}` : ''}.`,
+    `Context: ${ctx.street.toUpperCase()} | Hand bucket: ${handBucket.replace(/-/g, ' ')}${ctx.board.length ? ` | Board: ${boardBucket.replace(/-/g, ' ')}` : ''}.`,
     handHints[handBucket].detail,
     ctx.board.length ? boardHints[boardBucket].detail : 'Preflop spots are driven most by position and facing action.',
     ctx.heroAggressor ? 'You were the aggressor, so you can represent stronger top-end more often.' : 'You were not last aggressor, so protect your check/call range and avoid auto-piloting aggression.'
   ];
-
-  if (ctx.mode !== 'full-ring' && ctx.mode !== 'replay' && ctx.trainerType) {
-    detailParts.unshift(trainerLead[ctx.trainerType]);
-  }
 
   return {
     quick: quickParts.join(' '),

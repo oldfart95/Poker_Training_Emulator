@@ -1,4 +1,4 @@
-export type Suit = '♠' | '♥' | '♦' | '♣';
+export type Suit = '\u2660' | '\u2665' | '\u2666' | '\u2663';
 export type Rank = '2'|'3'|'4'|'5'|'6'|'7'|'8'|'9'|'T'|'J'|'Q'|'K'|'A';
 
 export interface Card {
@@ -74,4 +74,4 @@ export interface SessionStats {
   mistakes: Record<'too loose preflop'|'passive error'|'bad call'|'bad bluff'|'overvalue hand', number>;
 }
 
-export type Mode = 'full-ring'|'preflop-trainer'|'cbet-trainer'|'blind-defense'|'replay';
+export type Mode = 'full-ring'|'replay';

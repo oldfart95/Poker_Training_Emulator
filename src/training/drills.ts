@@ -1,4 +1,4 @@
-import { Card, Mode } from '../engine/types';
+import { Card } from '../engine/types';
 import { createDeck } from '../engine/deck';
 import { BlindDefenseContext, CBetContext, PreflopContext, TrainingAction } from './scoring';
 
@@ -17,6 +17,8 @@ export interface DrillOptions {
   seed?: number;
   index?: number;
 }
+
+export type DrillCategory = 'preflop-trainer' | 'cbet-trainer' | 'blind-defense';
 
 const mulberry32 = (seed: number) => {
   let t = seed + 0x6d2b79f5;
@@ -45,7 +47,7 @@ const shuffleWithRng = <T>(items: T[], rand: () => number): T[] => {
 const drawCards = (n: number, rand: () => number): Card[] => shuffleWithRng(createDeck(), rand).slice(0, n);
 const pick = <T>(items: T[], rand: () => number): T => items[Math.floor(rand() * items.length)];
 
-export const nextDrillSpot = (mode: Mode, options?: DrillOptions): DrillSpot | null => {
+export const nextDrillSpot = (mode: DrillCategory, options?: DrillOptions): DrillSpot | null => {
   const rand = createRng(options);
   const seedTag = options?.seed !== undefined ? `${options.seed}:${options.index ?? 0}` : undefined;
 
