@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction, beginHand, createInitialState, takeBotTurn } from '../../engine/gameEngine';
-import { buildActionsCsv, buildHandsCsv } from '../exporters';
+import { buildActionsCsv, buildHandsCsv, buildSessionJson } from '../exporters';
 import { createSessionExport, createSessionRecord, recordStateTransition } from '../logger';
 import type { SessionEnvironment } from '../types';
 
@@ -38,9 +38,13 @@ describe('session logger', () => {
 
     expect(exported.hands).toHaveLength(1);
     expect(exported.summary.hands).toBe(1);
+    expect(exported.schemaVersion).toBe('1.0.0');
+    expect(exported.session.heroSeat).toBe(0);
+    expect(exported.hands[0].heroSeat).toBe(0);
     expect(exported.hands[0].actions.some((action) => action.action === 'post_blind')).toBe(true);
     expect(exported.hands[0].result.heroFoldStreet).toBe('preflop');
     expect(buildHandsCsv(exported)).toContain('sessionId,handNumber,handId');
     expect(buildActionsCsv(exported)).toContain('post_blind');
+    expect(buildSessionJson(exported)).toContain('"schemaVersion": "1.0.0"');
   });
 });

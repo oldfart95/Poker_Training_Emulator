@@ -131,6 +131,7 @@ export interface SessionHandResult {
 export interface SessionHandLog {
   handNumber: number;
   handId: string;
+  heroSeat?: number;
   status: HandLogStatus;
   startedAt: string;
   endedAt: string | null;
@@ -169,6 +170,7 @@ export interface SessionSummary {
 
 export interface SessionRecord {
   formatVersion: typeof SESSION_FORMAT_VERSION;
+  schemaVersion?: typeof SESSION_FORMAT_VERSION;
   app: 'Pocket Pixel Poker';
   session: {
     id: string;
@@ -177,6 +179,7 @@ export interface SessionRecord {
     mode: Mode;
     roomPolicy: StrategyMode;
     pace: PaceMode;
+    heroSeat?: number;
     handsPlayed: number;
     status: SessionStatus;
   };
@@ -218,10 +221,13 @@ export const isSessionRecord = (value: unknown): value is SessionRecord => {
     && typeof value.session.roomPolicy === 'string'
     && typeof value.session.pace === 'string'
     && typeof value.session.handsPlayed === 'number'
+    && (value.schemaVersion === undefined || value.schemaVersion === SESSION_FORMAT_VERSION)
+    && (value.session.heroSeat === undefined || typeof value.session.heroSeat === 'number')
     && value.hands.every((hand) => (
       isObject(hand)
       && typeof hand.handNumber === 'number'
       && typeof hand.handId === 'string'
+      && (hand.heroSeat === undefined || typeof hand.heroSeat === 'number')
       && Array.isArray(hand.heroHoleCards)
       && Array.isArray(hand.actions)
       && isObject(hand.board)

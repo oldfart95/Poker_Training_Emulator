@@ -114,6 +114,7 @@ const createHandLog = (state: GameState, timestamp: string): SessionHandLog => {
   const hand: SessionHandLog = {
     handNumber: state.handId,
     handId: `${state.handId}-${createId()}`,
+    heroSeat: HERO_SEAT,
     status: 'active',
     startedAt: timestamp,
     endedAt: null,
@@ -208,6 +209,7 @@ export const createSessionRecord = (state: GameState, environment: SessionEnviro
   const timestamp = nowIso();
   return {
     formatVersion: SESSION_FORMAT_VERSION,
+    schemaVersion: SESSION_FORMAT_VERSION,
     app: 'Pocket Pixel Poker',
     session: {
       id: createId(),
@@ -216,6 +218,7 @@ export const createSessionRecord = (state: GameState, environment: SessionEnviro
       mode: environment.mode,
       roomPolicy: environment.roomPolicy,
       pace: environment.pace,
+      heroSeat: HERO_SEAT,
       handsPlayed: 0,
       status: 'active'
     },
