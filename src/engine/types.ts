@@ -7,14 +7,42 @@ export interface Card {
 }
 
 export type Street = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
-export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all-in';
+export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'post_blind';
+
+export interface LegalActionsSnapshot {
+  actorSeat: number;
+  street: Street;
+  canFold: boolean;
+  canCheck: boolean;
+  canCall: boolean;
+  canBet: boolean;
+  canRaise: boolean;
+  canAllIn: boolean;
+  amountToCall: number;
+  currentBet: number;
+  minRaiseSize: number;
+  minBetOrRaiseTo: number | null;
+  maxToAmount: number;
+}
 
 export interface ActionRecord {
+  actionIndex: number;
+  timestamp: string;
   seat: number;
   playerName: string;
   street: Street;
   type: ActionType;
   amount: number;
+  toAmount: number;
+  potBefore: number;
+  potAfter: number;
+  stackBefore: number;
+  stackAfter: number;
+  amountToCallBefore: number;
+  amountToCallAfter: number;
+  isAllIn: boolean;
+  legalActionsSnapshot?: LegalActionsSnapshot;
+  note?: string;
 }
 
 export interface Player {
@@ -29,6 +57,7 @@ export interface Player {
   totalContributed: number;
   seat: number;
   position: string;
+  busted: boolean;
   profile?: string;
 }
 
@@ -46,6 +75,29 @@ export interface HandSummary {
   startingPot: number;
   sb: number;
   bb: number;
+  buttonSeat: number;
+  smallBlindSeat: number;
+  bigBlindSeat: number;
+  startingStacks: Record<string, number>;
+  endingStacks: Record<string, number>;
+  activePlayersAtStart: number[];
+  activeSeatMap: boolean[];
+  tableSizeAtStart: number;
+  showdown: boolean;
+  winners: Array<{
+    seat: number;
+    name: string;
+    amountWon: number;
+    winningCards?: Card[];
+  }>;
+  busts: Array<{
+    seat: number;
+    name: string;
+    stackLost: number;
+  }>;
+  handIntegrity: 'valid' | 'invalid';
+  integrityErrors: string[];
+  engineVersion: string;
   resultChips: number;
   resultBb: number;
   rating: 'good'|'reasonable'|'questionable'|'punt';

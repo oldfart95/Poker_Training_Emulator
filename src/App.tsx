@@ -336,7 +336,7 @@ export default function App() {
   };
 
   const legal = legalActions(state, 0);
-  const canRaise = legal.max >= legal.minRaise && !state.summary;
+  const canRaise = (legal.canBet || legal.canRaise) && !state.summary;
   const lastAction = state.actions[state.actions.length - 1];
   const hero = state.players[0];
   const selectedBet = clamp(betAmount, legal.minRaise, Math.max(legal.minRaise, legal.max));
@@ -353,7 +353,7 @@ export default function App() {
   const heroStatusLine = state.summary
     ? 'Replay it or deal the next spot.'
     : heroPendingAction
-      ? `${hero.position} to act. ${legal.canCheck ? 'Check is live.' : `Call ${legal.toCall}.`} ${canRaise ? `Min raise ${legal.minRaise}.` : 'Raise closed.'}`
+      ? `${hero.position} to act. ${legal.canCheck ? 'Check is live.' : `Call ${legal.toCall}.`} ${canRaise ? `${legal.canBet ? 'Min bet' : 'Min raise'} ${legal.minRaise}.` : 'Raise closed.'}`
       : 'Watch the table tempo and who is driving the action.';
 
   const sizingPresets = [
@@ -366,7 +366,7 @@ export default function App() {
 
   const spotHint = useMemo(() => {
     const liveVillain = state.players.find((player) => !player.isHero && !player.folded);
-    const heroAggressor = state.actions.some((action) => action.seat === 0 && (action.type === 'raise' || action.type === 'all-in' || action.type === 'bet'));
+    const heroAggressor = state.actions.some((action) => action.seat === 0 && (action.type === 'raise' || action.type === 'all_in' || action.type === 'bet'));
     return generateSpotHint({
       mode,
       strategyMode,
@@ -418,8 +418,8 @@ export default function App() {
     setOpenPanel((currentPanel) => currentPanel === panel ? null : panel);
   };
 
-  const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount = 0) => {
-    if (processing) return;
+  const heroAction = async (type: 'fold' | 'check' | 'call' | 'raise' | 'all_in', amount = 0) => {
+    if (processing || !stateRef.current.waitingForHero || stateRef.current.summary) return;
 
     const previousState = stateRef.current;
     const next = applyAction(previousState, 0, type, amount);

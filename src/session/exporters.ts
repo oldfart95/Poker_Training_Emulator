@@ -37,6 +37,9 @@ export const buildHandsCsv = (sessionExport: SessionExport) => toCsv([
   'heroWon',
   'heroFoldStreet',
   'potFinal',
+  'handIntegrity',
+  'integrityErrors',
+  'engineVersion',
   'notes'
 ], sessionExport.hands.map((hand) => ({
   sessionId: sessionExport.session.id,
@@ -55,6 +58,9 @@ export const buildHandsCsv = (sessionExport: SessionExport) => toCsv([
   heroWon: hand.result.heroWon,
   heroFoldStreet: hand.result.heroFoldStreet ?? '',
   potFinal: hand.result.potFinal ?? '',
+  handIntegrity: hand.handIntegrity,
+  integrityErrors: hand.integrityErrors.join(' | '),
+  engineVersion: hand.engineVersion,
   notes: [hand.status !== 'completed' ? 'In progress' : '', ...hand.notes].filter(Boolean).join(' | ')
 })));
 
@@ -73,6 +79,9 @@ export const buildActionsCsv = (sessionExport: SessionExport) => toCsv([
   'potAfter',
   'stackBefore',
   'stackAfter',
+  'amountToCallBefore',
+  'amountToCallAfter',
+  'isAllIn',
   'note'
 ], sessionExport.hands.flatMap((hand) => hand.actions.map((action) => ({
   sessionId: sessionExport.session.id,
@@ -89,6 +98,9 @@ export const buildActionsCsv = (sessionExport: SessionExport) => toCsv([
   potAfter: action.potAfter ?? '',
   stackBefore: action.stackBefore ?? '',
   stackAfter: action.stackAfter ?? '',
+  amountToCallBefore: action.amountToCallBefore ?? '',
+  amountToCallAfter: action.amountToCallAfter ?? '',
+  isAllIn: action.isAllIn ?? '',
   note: action.note ?? ''
 }))));
 

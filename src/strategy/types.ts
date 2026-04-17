@@ -3,7 +3,7 @@ import { Archetype } from '../ai/tuning/archetypes';
 import { Position } from '../ai/tuning/ranges';
 
 export type StrategyMode = 'exploit' | 'blueprint';
-export type ActionKind = 'fold' | 'check' | 'call' | 'raise' | 'all-in';
+export type ActionKind = 'fold' | 'check' | 'call' | 'raise' | 'all_in';
 
 export interface StrategyContext {
   mode: StrategyMode;

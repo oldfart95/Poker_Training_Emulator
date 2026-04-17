@@ -15,7 +15,7 @@ describe('strategy policy tables and exploit adjustments', () => {
 
   it('reduces station bluff raises in exploit mode', () => {
     const { adjusted, notes } = applyExploitAdjustments(
-      { fold: 0.2, check: 0.2, call: 0.1, raise: 0.5, 'all-in': 0 },
+      { fold: 0.2, check: 0.2, call: 0.1, raise: 0.5, all_in: 0 },
       'Calling Station',
       'bluff-no-blockers',
       true

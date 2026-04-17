@@ -8,7 +8,7 @@ const hasAceHighOnly = (cards: Card[], board: Card[]): boolean => {
 };
 
 const inferVillain = (actions: ActionRecord[], players: Player[]): Player | undefined => {
-  const villainSeat = [...actions].reverse().find((a) => a.seat !== 0 && ['raise','all-in','call'].includes(a.type))?.seat;
+  const villainSeat = [...actions].reverse().find((a) => a.seat !== 0 && ['raise', 'bet', 'all_in', 'call'].includes(a.type))?.seat;
   return players.find((p) => p.seat === villainSeat);
 };
 
@@ -22,7 +22,7 @@ const tendencyHint = (profile?: string): string => {
 };
 
 export const rateHand = (hero: Player, board: Card[], actions: ActionRecord[], delta: number, bb: number, players: Player[]) => {
-  const vpip = actions.find((a) => a.seat === 0 && a.street === 'preflop' && ['call','raise','all-in'].includes(a.type));
+  const vpip = actions.find((a) => a.seat === 0 && a.street === 'preflop' && ['call', 'raise', 'bet', 'all_in'].includes(a.type));
   const riverCall = [...actions].reverse().find((a) => a.seat === 0 && a.street === 'river' && a.type === 'call');
   const villain = inferVillain(actions, players);
   const oppHint = tendencyHint(villain?.profile);

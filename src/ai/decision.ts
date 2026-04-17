@@ -29,12 +29,12 @@ export interface DecisionDebug {
   handKey: string;
   bucket: string;
   texture: string;
-  weights: Record<'fold'|'check'|'call'|'raise'|'all-in', number>;
+  weights: Record<'fold'|'check'|'call'|'raise'|'all_in', number>;
   adjustments: string[];
   reason: string;
 }
 
-export const decideBotAction = (i: DecisionInput): {type:'fold'|'check'|'call'|'raise'|'all-in', amount:number, debug: DecisionDebug} => {
+export const decideBotAction = (i: DecisionInput): {type:'fold'|'check'|'call'|'raise'|'all_in', amount:number, debug: DecisionDebug} => {
   const strategyMode: StrategyMode = i.strategyMode ?? 'exploit';
   const decision = decideStrategyAction({
     ...i,

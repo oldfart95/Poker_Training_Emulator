@@ -85,12 +85,12 @@ export function TableStage({
   dealNextHand: () => void;
   processing: boolean;
   hero: Player;
-  legal: { canCheck: boolean; toCall: number; minRaise: number; max: number };
+  legal: { canCheck: boolean; canFold: boolean; canCall: boolean; canBet: boolean; canAllIn: boolean; toCall: number; minRaise: number; max: number };
   canRaise: boolean;
   selectedBet: number;
   sizingPresets: Array<{ label: string; amount: number; disabled: boolean }>;
   heroStatusLine: string;
-  heroAction: (type: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount?: number) => void;
+  heroAction: (type: 'fold' | 'check' | 'call' | 'raise' | 'all_in', amount?: number) => void;
   paceMode: PaceMode;
   setPaceMode: (paceMode: PaceMode) => void;
   setBetAmount: (amount: number) => void;
@@ -219,7 +219,7 @@ export function TableStage({
               <strong>{legal.canCheck ? 'Free' : legal.toCall}</strong>
             </div>
             <div className="intel-pill">
-              <span>Min raise</span>
+              <span>{legal.canBet ? 'Min bet' : 'Min raise'}</span>
               <strong>{canRaise ? legal.minRaise : '-'}</strong>
             </div>
             <div className="intel-pill">
@@ -229,23 +229,31 @@ export function TableStage({
           </div>
 
           <div className="primary-actions">
-            <button type="button" className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
-              Fold
-            </button>
-            <button
-              type="button"
-              className={`neutral ${legal.canCheck ? 'soft' : ''}`}
-              disabled={!!state.summary || processing}
-              onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
-            >
-              {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
-            </button>
-            <button type="button" className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
-              Raise To {selectedBet}
-            </button>
-            <button type="button" className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all-in')}>
-              All-in
-            </button>
+            {legal.canFold && (
+              <button type="button" className="danger" disabled={!!state.summary || processing} onClick={() => heroAction('fold')}>
+                Fold
+              </button>
+            )}
+            {(legal.canCheck || legal.canCall) && (
+              <button
+                type="button"
+                className={`neutral ${legal.canCheck ? 'soft' : ''}`}
+                disabled={!!state.summary || processing}
+                onClick={() => heroAction(legal.canCheck ? 'check' : 'call')}
+              >
+                {legal.canCheck ? 'Check' : `Call ${legal.toCall}`}
+              </button>
+            )}
+            {canRaise && (
+              <button type="button" className="accent" disabled={!canRaise || processing} onClick={() => heroAction('raise', selectedBet)}>
+                {legal.canBet ? `Bet ${selectedBet}` : `Raise To ${selectedBet}`}
+              </button>
+            )}
+            {legal.canAllIn && (
+              <button type="button" className="gold" disabled={!!state.summary || processing} onClick={() => heroAction('all_in')}>
+                All-in
+              </button>
+            )}
           </div>
 
           <div className="sizing-controls compact">

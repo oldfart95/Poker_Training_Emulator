@@ -6,11 +6,11 @@ import { preflopPolicyTables } from '../policyTables/preflopPolicies';
 import { normalizeWeights, sizeFromPolicy, weightedChoice } from '../shared/helpers';
 import { StrategyContext, StrategyDebug } from '../types';
 
-export const decideBlueprintAction = (ctx: StrategyContext): { type: 'fold' | 'check' | 'call' | 'raise' | 'all-in'; amount: number; debug: StrategyDebug } => {
+export const decideBlueprintAction = (ctx: StrategyContext): { type: 'fold' | 'check' | 'call' | 'raise' | 'all_in'; amount: number; debug: StrategyDebug } => {
   const handKey = handToKey(ctx.cards);
   const handBucket = classifyHandBucket(ctx.cards, ctx.board);
   const boardBucket = classifyBoardBucket(ctx.board);
-  let weights = { fold: 0.01, check: 0.01, call: 0.01, raise: 0.01, 'all-in': 0.001 };
+  let weights = { fold: 0.01, check: 0.01, call: 0.01, raise: 0.01, all_in: 0.001 };
   const notes: string[] = [];
 
   if (ctx.street === 'preflop') {
@@ -36,7 +36,7 @@ export const decideBlueprintAction = (ctx: StrategyContext): { type: 'fold' | 'c
       notes.push('Blind defense frequency applied.');
     }
 
-    if (!inRange(ctx.cards, new Set(['AA','KK','QQ','AKs'])) && ctx.facingThreeBet) weights['all-in'] = 0;
+    if (!inRange(ctx.cards, new Set(['AA','KK','QQ','AKs'])) && ctx.facingThreeBet) weights.all_in = 0;
   } else {
     const policy = postflopPolicies[boardBucket][handBucket];
     weights = { ...policy };
@@ -54,7 +54,7 @@ export const decideBlueprintAction = (ctx: StrategyContext): { type: 'fold' | 'c
   const policyWeights = normalizeWeights(weights);
   const selected = weightedChoice(policyWeights);
   const type = selected === 'check' && !ctx.canCheck ? 'call' : selected;
-  const amount = type === 'raise' ? sizeFromPolicy(ctx.pot, ctx.minRaise, ctx.stack, boardBucket) : type === 'all-in' ? ctx.stack : type === 'call' ? ctx.toCall : 0;
+  const amount = type === 'raise' ? sizeFromPolicy(ctx.pot, ctx.minRaise, ctx.stack, boardBucket) : type === 'all_in' ? ctx.stack : type === 'call' ? ctx.toCall : 0;
 
   return {
     type,

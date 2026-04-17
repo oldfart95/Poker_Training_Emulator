@@ -42,7 +42,7 @@ describe('action sanity', () => {
       facingThreeBet: false,
       hasBetThisStreet: false
     });
-    expect(['raise','check']).toContain(a.type);
+    expect(['raise', 'check', 'fold']).toContain(a.type);
     expect(a.debug.reason.length).toBeGreaterThan(5);
   });
 

@@ -1,4 +1,5 @@
 import type { ActionType, Card, Mode, Street } from '../engine/types';
+import type { LegalActionsSnapshot } from '../engine/types';
 import type { PaceMode } from '../presentation/pacing';
 import type { StrategyMode } from '../strategy/types';
 
@@ -103,6 +104,10 @@ export interface SessionActionEvent {
   potAfter?: number;
   stackBefore?: number;
   stackAfter?: number;
+  amountToCallBefore?: number;
+  amountToCallAfter?: number;
+  isAllIn?: boolean;
+  legalActionsSnapshot?: LegalActionsSnapshot;
   note?: string;
 }
 
@@ -141,6 +146,11 @@ export interface SessionHandLog {
   endingStacks: Record<string, number> | null;
   busts: SessionBustEvent[];
   coachHints: SessionCoachHint[];
+  handIntegrity: 'valid' | 'invalid';
+  integrityErrors: string[];
+  engineVersion: string;
+  tableSizeAtStart: number;
+  activeSeatMap: boolean[];
   result: SessionHandResult;
   notes: string[];
 }

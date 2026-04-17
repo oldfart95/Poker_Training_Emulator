@@ -2,7 +2,7 @@ import { ActionKind } from '../types';
 
 export const normalizeWeights = (weights: Record<ActionKind, number>): Record<ActionKind, number> => {
   const total = Object.values(weights).reduce((sum, value) => sum + Math.max(0, value), 0);
-  if (total <= 0) return { fold: 0.2, check: 0.2, call: 0.2, raise: 0.2, 'all-in': 0.2 };
+  if (total <= 0) return { fold: 0.2, check: 0.2, call: 0.2, raise: 0.2, all_in: 0.2 };
   return Object.fromEntries(Object.entries(weights).map(([key, value]) => [key, Math.max(0, value) / total])) as Record<ActionKind, number>;
 };
 

@@ -11,7 +11,7 @@ export interface ReplayStep {
 }
 
 const actionTone = (action: ActionRecord): 'value-heavy' | 'wide' | 'passive' | 'sticky' | 'overaggressive' => {
-  if (action.type === 'raise' || action.type === 'all-in') return action.amount > 0 ? 'overaggressive' : 'value-heavy';
+  if (action.type === 'raise' || action.type === 'all_in' || action.type === 'bet') return action.amount > 0 ? 'overaggressive' : 'value-heavy';
   if (action.type === 'call') return 'sticky';
   if (action.type === 'check') return 'passive';
   return 'wide';
